@@ -4,3 +4,4 @@ config.status
 autom4te.cache
 *.beam
 *~
+Wrangler_Setup.exe
