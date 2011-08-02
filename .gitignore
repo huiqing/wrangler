@@ -4,4 +4,7 @@ config.status
 autom4te.cache
 *.beam
 *~
+<<<<<<< HEAD
 Wrangler_Setup.exe
+=======
+>>>>>>> a564343... added more entries.
