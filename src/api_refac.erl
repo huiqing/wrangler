@@ -24,7 +24,6 @@
 %% OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF 
 %% ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-%%@version 0.1
 %%@author  Huiqing Li <H.Li@kent.ac.uk>
 %%
 %%
@@ -138,8 +137,21 @@
 %%           `?T("f@(Args@'`@'`)when Guard@'`@'`-> Body@'`@;")'
 %%
 %%where `f@' is a placeholder for the function name.
-%%</li>
 %%
+%%</li>
+%%<li>
+%%?FUN_APPLY(M, F, A).
+%% A special conditional meta-template which can be used to match with a function application 
+%% node, and check if this node represents the application of function `M:F/A' in one of the 
+%% following formats: `F(Args@'`@'`)',  `F(Args@'`@'`)', `fun M:F/A(Args@'`@'`)', 
+%% `fun F/A(Args@'`@'`)', `apply(M, F, [Args@'`@'`])' and `apply(M, F, Args@)', or the use of function `M:F/A' in 
+%% one of the following ways: `spawn(N@@, M, F, [Args@'`@'`])',
+%% `spawn(N@'`@'`, M, F, Args@)', `spawn_link(N@'`@'`, M, F, [Args@'`@'`])',
+%% `spawn_link(N@'`@'`, M, F, Args@)', `spawn:hibernate(N@'`@'`, M, F, [Args@'`@'`])', `erlang:hibernate(M, F, Args@)',
+%% `spawn_monitor(N@'`@'`, M, F, [Args@'`@'`])', `spawn_monitor(M, F, Args@)', and 
+%% `spawn_opts(N@'`@'`, M, F, [Args@'`@'`],Opts@)', and `spawn_opts(N@'`@'`, M, F, Args@, Opts@)'.
+%%
+%%</li>
 %%<li>
 %%?RULE(Template, NewCode, Cond).
 %% A conditional transformation rule is denoted by a macro `?RULE'. In 
@@ -168,7 +180,7 @@
 %% the transformation. While `NewCode' should evaluate to an AST node, or a sequence of 
 %% AST nodes, the user does not have to compose the AST manually, instead the general 
 %% way is to create the string representation of the new code fragment, and use the 
-%% macro `?QUOTE', which is also part of the Wrangler API, to turn the string 
+%% macro `?TO_AST', which is also part of the Wrangler API, to turn the string 
 %% representation  of a code fragment into its AST representation. All the
 %% meta-variables/atoms bound in `Template' are visible, and can be used by `NewCode', 
 %% and further more, it is also possible for `NewCode' to define its own meta variables 
@@ -177,7 +189,7 @@
 %%            ?RULE(?T("F@(Args@@@)"), 
 %%                  begin 
 %%                     NewArgs@@@=delete(N, Args@@@),
-%%                     ?QUOTE("F@(NewArgs@@@)")
+%%                     ?TO_AST("F@(NewArgs@@@)")
 %%                   end,
 %%                   refac_api:fun_define_info(F@) == {M, F, A}).
 %%
@@ -186,7 +198,7 @@
 %%
 %% </li>
 %% <li>
-%% ?QUOTE(Str).
+%% ?TO_AST(Str).
 %% This macro takes a string representation of a code fragment as input, which 
 %% may contain meta-variables, parses the string into the AST representation of the code,
 %% and then substitutes the meta-variables and/or meta-atoms with the AST nodes 
@@ -234,7 +246,7 @@
 %%
 %%</li>
 %%<li>
-%%?SPLICE(Tree).
+%%?PP(Tree).
 %%
 %%Pretty-prints the AST `Tree', and returns the string representation.
 %%
@@ -298,7 +310,7 @@
 %%<a href="file:refac_batch_rename_fun.erl"> Batch renaming of function names from camelCaseto camel_case. </a>
 %%</li>
 %%<li>
-%%<a href="file:code_inspector_examples.erl"> A collection of code inspectors written using the Wrangler API. </a>
+%%<a href="file:inspec_examples.erl"> A collection of code inspectors written using the Wrangler API. </a>
 %%</li>
 %%</ul>
 
@@ -334,6 +346,7 @@
          defined_funs/1,
          get_ast/1, 
          get_module_info/1,
+         get_mfas/2,
          client_files/2,
          module_name/1,
          tokenize/3,
@@ -343,22 +356,28 @@
          insert_an_attr/2,
          remove_from_import/2,
          add_to_export_after/3,
-         splice/1,
+         pp/1,
          equal/2,
-         quote/1]).
+         quote/1,
+         get_app_mod/1,
+         get_app_fun/1,
+         get_app_args/1,
+         update_app_mod/2,
+         update_app_fun/2,
+         update_app_args/2]).
 
--export([parse_annotate_expr/1, 
-         parse_annotate_expr/2,
-         extended_parse_annotate_expr/1,
-         extended_parse_annotate_expr/2,
-         subst/2, 
+-export([subst/2, 
          collect/3,
          match/2,
          match/3,
          search_and_transform/3,
-         search_and_collect/3]).
-        
--include("../include/wrangler_internal.hrl").
+         search_and_collect/3,
+         meta_apply_templates/1]).
+
+-compile(export_all).
+
+-include("../include/wrangler.hrl").
+
 
 %% ======================================================================
 %% @doc Generates a new name by appending "_1" to the end of the 'BaseName'
@@ -380,36 +399,16 @@ make_new_name(BaseName, UsedNames) ->
 %%@spec is_var_name(string())-> boolean()
 -spec(is_var_name(Name:: string())-> boolean()).
 is_var_name(Name) ->
-    case Name of
-      [] -> false;
-      [H] -> is_upper(H) and (H =/= 95);
-      [H| T] -> (is_upper(H) or (H == 95)) and is_var_name_tail(T)
-    end.
+    wrangler_misc:is_var_name(Name).
+   
 
 %%@doc Returns `true' if a string is lexically a legal function name,
 %%      otherwise `false'.
 %%@spec is_fun_name(string())-> boolean()
+-spec(is_fun_name(string())-> boolean()).
 is_fun_name(Name) ->
-    case Name of
-      [H| T] -> is_lower(H) and is_var_name_tail(T);
-      [] -> false
-    end.
-
-is_var_name_tail(Name) ->
-    case Name of
-      [H| T] ->
-	  (is_upper(H) or is_lower(H) or 
-	   is_digit(H) or (H == 64) or (H == 95)) and
-	    is_var_name_tail(T);
-      [] -> true
-    end.
-
-is_upper(L) -> (L >= 65) and (90 >= L).
-
-is_lower(L) -> (L >= 97) and (122 >= L).
-
-is_digit(L) -> (L >= 48) and (57 >= L).
-
+    wrangler_misc:is_fun_name(Name).
+  
 
 %% =====================================================================
 %%@doc Returns all the variables, including both variable name and 
@@ -605,13 +604,19 @@ imported_funs(File, ModuleName) ->
 
 -spec(inscope_funs/1::(filename()|module_info()) -> [{atom(),atom(),integer()}]).
 inscope_funs(FileOrModInfo) ->
-  case filelib:is_regular(FileOrModInfo) of
-      true ->
-          {ok, {_, Info}} = wrangler_ast_server:parse_annotate_file(FileOrModInfo, true),
-          inscope_funs_1(Info);
-      false ->
-          inscope_funs_1(FileOrModInfo)
-  end.      
+    case FileOrModInfo of 
+        [{_Key, _}|_] ->
+            inscope_funs_1(FileOrModInfo);
+        _ ->
+            case filelib:is_regular(FileOrModInfo) of 
+                true ->
+                    {ok, {_, Info}} = wrangler_ast_server:parse_annotate_file(FileOrModInfo, true),
+                    inscope_funs_1(Info);
+                false ->
+                    throw({error,badarg})
+            end
+    end.
+     
 inscope_funs_1(ModInfo) ->
     Imps = case lists:keysearch(imports, 1, ModInfo) of
                {value, {imports, I}} ->
@@ -764,7 +769,7 @@ variable_define_pos(Node) ->
                     [{0,0}]
             end;
         _->
-            erlang:error(bagarg)
+            erlang:error(bagarg, [Node])
     end.
 
 %% ================================================================================
@@ -844,8 +849,9 @@ insert_an_attr(AST, Attr) ->
     Forms = wrangler_syntax:form_list_elements(AST),
     {Forms1, Forms2} = lists:splitwith(
                        fun(F) ->
-                               wrangler_syntax:type(F) == attribute orelse
-                               wrangler_syntax:type(F) == comment
+                               (wrangler_syntax:type(F) == attribute andalso 
+                                not is_spec(F)) orelse
+                                   wrangler_syntax:type(F) == comment
                        end, Forms),
     {Forms12, Forms11} = lists:splitwith(fun(F) ->
                                                 wrangler_syntax:type(F) == comment
@@ -853,8 +859,18 @@ insert_an_attr(AST, Attr) ->
     NewForms=lists:reverse(Forms11)++[Attr]++lists:reverse(Forms12)++Forms2,
     wrangler_syntax:form_list(NewForms).
 
+is_spec(Form) ->
+    case wrangler_syntax:type(Form) of 
+        attribute -> 
+            AttrName =wrangler_syntax:attribute_name(Form),
+            wrangler_syntax:type(AttrName)==atom andalso 
+                wrangler_syntax:atom_value(AttrName)==spec;
+        _ ->
+            false
+    end.
+
 %% =====================================================================
-%%@doc Remove `F/A' from the entity list of the import attribute 
+%%@doc Removes `F/A' from the entity list of the import attribute 
 %%     represented by `Node'.
 %%@spec remove_from_import(attribute(), {functionname(), arity()}) -> attribute()
 remove_from_import(Node, _FA={F,A}) ->
@@ -953,99 +969,19 @@ do_mask_variables(Node) ->
 
 %%=================================================================
 %%@private
-splice(Expr) when is_list(Expr) ->
-    splice_1(Expr);
-splice(Expr) ->
+pp(Expr) when is_list(Expr) ->
+    pp_1(Expr);
+pp(Expr) ->
     wrangler_prettypr:format(Expr).
 
-splice_1([E]) ->
+pp_1([E]) ->
     wrangler_prettypr:format(E);
-splice_1([E|Es]) ->  
-    wrangler_prettypr:format(E) ++ "," ++ splice_1(Es).
+pp_1([E|Es]) ->
+    wrangler_prettypr:format(E) ++ "," ++ pp_1(Es).
 
 %%@private
 quote(Str) ->    
-    parse_annotate_expr(Str).
-
-
-%%===================================================================
-%%@private
-extended_parse_annotate_expr(Str) ->
-    extend_function_clause(parse_annotate_expr(Str)).
-%%@private
-extended_parse_annotate_expr(Str, Pos) ->
-    extend_function_clause(parse_annotate_expr(Str, Pos)).
-%%@private
-parse_annotate_expr("") ->
-    wrangler_syntax:empty_node();
-parse_annotate_expr(ExprStr) ->
-    parse_annotate_expr(ExprStr, {1,1}).
-%%@private
-parse_annotate_expr("", _) ->
-    wrangler_syntax:empty_node();
-parse_annotate_expr(ExprStr, StartLoc) when is_integer(StartLoc) ->
-    parse_annotate_expr(ExprStr, {StartLoc, 1});
-parse_annotate_expr(ExprStr, StartLoc) when is_tuple(StartLoc) ->
-    case wrangler_scan:string(ExprStr, StartLoc) of
-        {ok, Toks, _} ->
-            [T|Ts] = lists:reverse(Toks),
-            Toks1 = case T of 
-                        {dot, _} -> Toks;
-                        {';',_} -> lists:reverse([{dot, 999}|Ts]);
-                        _ -> Toks++[{dot, 999}]
-                    end,
-            Toks2 = wrangler_epp_dodger:scan_macros(Toks1,[]),
-            case wrangler_parse:parse_form(Toks2) of 
-                {ok, AbsForm} ->
-                    case wrangler_syntax:type(AbsForm) of
-                        function ->
-                            Form1 =wrangler_epp_dodger:fix_pos_in_form(Toks, AbsForm),
-                            Form2 =  wrangler_syntax_lib:annotate_bindings(Form1),
-                            Cs = wrangler_syntax:function_clauses(Form2),
-                            case {Cs, T} of 
-                                {[C], {';',_L}} ->
-                                    Name = wrangler_syntax:function_name(Form2),
-                                    wrangler_misc:rewrite(C, wrangler_syntax:function_clause(Name, C));
-                                _ ->
-                                    Form2
-                            end;
-                        _ ->
-                            wrangler_epp_dodger:fix_pos_in_form(Toks, AbsForm)
-                    end;
-                {error, Reason} ->
-                   case T of 
-                       {dot, _} ->
-                           throw({error, Reason});
-                       {';',_} -> 
-                           throw({error, Reason});
-                       _ ->
-                           case wrangler_parse:parse_exprs(Toks2) of
-                               {ok, Exprs} ->
-                                   Exprs1 =wrangler_epp_dodger:rewrite_list(Exprs),
-                                   Exprs2 = make_tree({block, StartLoc, Exprs1}),
-                                   Exprs3=wrangler_syntax_lib:annotate_bindings(Exprs2),
-                                   Exprs4 =wrangler_syntax:block_expr_body(Exprs3),
-                                   case Exprs4 of 
-                                       [E] -> E;
-                                       _ -> Exprs4
-                                   end;
-                               {error, Reason1} ->
-                                   throw({error, Reason1})
-                           end
-                   end
-            end;
-        {error, ErrInfo, ErrLoc} ->
-            throw({error, {ErrInfo, ErrLoc}})
-    end.
-
-make_tree(Tree) ->
-    case wrangler_syntax:subtrees(Tree) of
-        [] ->
-           Tree;
-        Gs ->
-            Gs1 = [[make_tree(T) || T <- G] || G <- Gs],
-            wrangler_syntax:update_tree(Tree, Gs1)
-    end.
+    wrangler_misc:parse_annotate_expr(Str).
 
 
 %%=================================================================
@@ -1251,7 +1187,7 @@ search_and_transform_2(Rules, FileOrDirs, Fun) ->
 search_and_transform_3(Rules, File, Fun, Selective) ->
     ?wrangler_io("The current file under refactoring is:\n~p\n", [File]),
     {ok, {AST, _}} = wrangler_ast_server:parse_annotate_file(File, true, [], 8),
-    AST0 = extend_function_clause(AST),
+    AST0 = wrangler_misc:extend_function_clause(AST),
     {AST1, Changed}=search_and_transform_4(File, Rules, AST0, Fun, Selective),
     if Changed andalso Selective/=true ->
             AST2= reverse_function_clause(AST1),
@@ -1271,7 +1207,7 @@ search_and_transform_4(File,Rules,Tree,Fun,Selective) ->
                     {true, NewExprAfter} ->
                         case Selective of
                             true ->
-                                {{SLn, SCol}, {ELn, ECol}}=wrangler_misc:start_end_loc(Node),
+                                {{SLn, SCol}, {ELn, ECol}}=start_end_loc(Node),
                                 MD5 = erlang:md5(wrangler_prettypr:format(Node)),
                                 ChangeCand={{File, SLn, SCol, ELn, ECol, MD5},
                                             wrangler_prettypr:format(NewExprAfter)},
@@ -1282,7 +1218,7 @@ search_and_transform_4(File,Rules,Tree,Fun,Selective) ->
                             false ->
                                 {NewExprAfter, true};
                             {false, CandsNotToChange} ->
-                                {{SLn, SCol}, {ELn, ECol}}=wrangler_misc:start_end_loc(Node),
+                                {{SLn, SCol}, {ELn, ECol}}=start_end_loc(Node),
                                 MD5 =erlang:md5(wrangler_prettypr:format(Node)),
                                 Key ={File, SLn, SCol, ELn, ECol, MD5},
                                 case lists:keysearch(Key,1,CandsNotToChange) of
@@ -1408,12 +1344,38 @@ make_fake_block_expr(Es) ->
 %%=================================================================
 %%@private
 match(Temp, Node) -> 
-    wrangler_generalised_unification:expr_match(Temp, Node).
-
+    Node1=wrangler_misc:extend_function_clause(Node),
+    wrangler_generalised_unification:expr_match(
+      Temp, Node1).
+     
 %%@private
-match(Temp, Node, Cond) -> 
-    wrangler_generalised_unification:expr_match(Temp, Node, Cond).
-    
+match({meta_apply, TCs}, Node, Cond) ->
+    %% wrangler_io:format("Temp:\n~p\n", [TCs]),
+    Node1=wrangler_misc:extend_function_clause(Node),
+    match_meta_apply_temp(TCs, Node1, Cond);
+match(Temp, Node, Cond) ->
+    Node1=wrangler_misc:extend_function_clause(Node),
+    wrangler_generalised_unification:expr_match(
+      Temp, Node1, Cond).
+
+
+match_meta_apply_temp(MetaApplyTemp, Node, Cond) ->
+    case MetaApplyTemp of
+        [] -> false;
+        [{T, C}|TCs] ->
+            case wrangler_generalised_unification:expr_match(T, Node, Cond) of
+                {true, Subst} ->
+                    case C(Node) of
+                        true ->
+                            {true, Subst}; 
+                        false ->
+                            match_meta_apply_temp(TCs, Node, Cond)
+                    end;
+                false ->
+                    match_meta_apply_temp(TCs, Node, Cond)
+            end
+    end.
+
 
 try_expr_match([], _Node) ->false;
 try_expr_match([{rule,Fun,BeforeExpr}|T], Node) 
@@ -1492,7 +1454,7 @@ is_meta_var_name(VarName) ->
    
 is_meta_atom_name(AtomName) ->
     AtomName1 = atom_to_list(AtomName),
-    is_fun_name(AtomName1) andalso
+    wrangler_misc:is_fun_name(AtomName1) andalso
     lists:prefix("@", lists:reverse(AtomName1)).
 
 
@@ -1577,7 +1539,7 @@ stop_td_collect(FileName, AST, Fun, Type) ->
                          end
                  end
          end,
-    AST1=extend_function_clause(AST),
+    AST1=wrangler_misc:extend_function_clause(AST),
     lists:reverse(api_ast_traverse:stop_tdTU(F, [], AST1)).
 
 
@@ -1621,7 +1583,7 @@ search_and_collect(Collectors, Input, TraverseStrategy) ->
     check_collectors(Collectors),
     case is_tree(Input) of
         true ->
-            Input1 = extend_function_clause(Input),
+            Input1 = wrangler_misc:extend_function_clause(Input),
             search_and_collect_1(Collectors,Input1,TraverseStrategy);
         false ->
             erlang:error("Collectors are applied to an invalid scope.")
@@ -1643,7 +1605,7 @@ search_and_collect_2(Collectors, FileOrDirs, TraverseStrategy) ->
 search_and_collect_3(Collectors, File, TraverseStrategy) ->
     ?wrangler_io("The current file under checking is:\n~p\n", [File]),
     {ok, {AST, _}} = wrangler_ast_server:parse_annotate_file(File, true, [], 8),
-    AST0 = extend_function_clause(AST),
+    AST0 = wrangler_misc:extend_function_clause(AST),
     search_and_collect_4(File, Collectors, AST0,TraverseStrategy).
    
 
@@ -1653,9 +1615,9 @@ search_and_collect_4(File, Collectors, Tree,TraverseStrategy)->
       end,
     case TraverseStrategy of
         full_td_tu ->
-            full_td_tu(F,[], Tree);
+            lists:reverse(full_td_tu(F,[], Tree));
         stop_td_tu ->
-            stop_td_tu(F,[],Tree)  
+            lists:reverse(stop_td_tu(F,[],Tree))  
     end.
 
 
@@ -1749,38 +1711,6 @@ stop_tdTU_1(_, S, []) -> S.
 
 stop_tdTU_2(F, S, [T | Ts]) -> stop_tdTU_2(F, stop_td_tu(F, S, T), Ts);
 stop_tdTU_2(_, S, []) -> S.
-
-
-%%================================================================
-%%@spec(extend_function_clause(Tree::syntaxTree()) -> syntaxTree()).
-%%@private             
-extend_function_clause(Tree) when is_list(Tree) ->
-    [extend_function_clause(T)||T<-Tree];
-extend_function_clause(Tree) ->
-    {Tree1, _} = api_ast_traverse:stop_tdTP(
-                   fun extend_function_clause_1/2, Tree, {}),
-    Tree1.
-
-extend_function_clause_1(Node, _OtherInfo) ->
-    case wrangler_syntax:type(Node) of
-        function ->
-            Node1=extend_function_clause_2(Node),
-            {Node1, true};
-        _ ->
-            {Node, false}
-    end.
-
-extend_function_clause_2(Node) ->
-    Name = wrangler_syntax:function_name(Node),
-    Cs = wrangler_syntax:function_clauses(Node),
-    Cs1= [case wrangler_syntax:type(C) of
-              clause ->
-                  wrangler_misc:rewrite(C,wrangler_syntax:function_clause(Name, C));
-              _ ->
-                  C
-          end
-          ||C<-Cs],
-    wrangler_misc:rewrite(Node, wrangler_syntax:function(Name, Cs1)).
 
 is_tree(Node) ->
     wrangler_syntax:is_tree(Node) orelse wrangler_syntax:is_wrapper(Node).
@@ -2058,7 +1988,6 @@ make_arity_qualifier(FunName, Arity) when
 make_arity_qualifier(_FunName, _Arity) ->
     erlang:error("badarg to function refac_api:make_arity_qualifier/2.").
 
-
    
 check_rules(Rules) when is_list(Rules)->
     AllRules=lists:all(fun(R) ->
@@ -2102,6 +2031,368 @@ check_collectors(_Collectors) ->
            "strategy can only be a list of collectors."}).
         
 
+%%@doc Returns the start and end locations of the code represented  
+%%     by `Tree' in the source file.
 -spec start_end_loc([syntaxTree()]|syntaxTree()) ->{pos(), pos()}.
 start_end_loc(Tree) ->
     wrangler_misc:start_end_loc(Tree).
+
+
+%%=====================================================================
+%% To provide a unified way to manipluate function applications.
+%%=====================================================================
+-record(fun_app, {mod_name ::syntaxTree()|none,
+                  fun_name ::syntaxTree(),
+                  args     ::[syntaxTree()]|syntaxTree()}).
+
+%% @doc For a function application node that matches `?FUN_APPY(M,F,A)', 
+%%     get the part that represents the module name if M appears in 
+%%     the application; otherwise returns `none'.
+-spec get_app_mod(syntaxTree()) ->syntaxTree()|none.
+get_app_mod(AppNode) ->
+    FunApp=match_app_node(AppNode),
+    FunApp#fun_app.mod_name.
+
+%% @doc For a function application node that matches `?FUN_APPY(M,F,A)', 
+%%     get the part that represents the function name.
+-spec get_app_fun(syntaxTree()) ->syntaxTree().
+get_app_fun(AppNode) ->
+    FunApp=match_app_node(AppNode),
+    FunApp#fun_app.fun_name.
+
+%% @doc For a function application node that matches `?FUN_APPY(M,F,A)', 
+%%     get the part that represents the arguments to which the function `F' 
+%%     is applied. This function returns the arguments as a list of AST 
+%%     nodes if the the function application matches one of those templates"
+%%     with `Args@'`@', as specified in the documentation of `?FUN_APPY(M,F,A)'; 
+%%     otherwise a single AST node.
+-spec get_app_args(syntaxTree()) ->[syntaxTree()]|syntaxTree().
+get_app_args(AppNode) ->
+    FunApp=match_app_node(AppNode),
+    FunApp#fun_app.args.
+
+%% @doc Replaces the module name part of a function application node with `Modname'.
+%%     The node `AppNode' should match one of the templates specified by`?FUN_APPY(M,F,A)'.
+-spec update_app_mod(syntaxTree(), syntaxTree()) ->syntaxTree().
+update_app_mod(AppNode, ModName) ->
+    AppNode1=update_app_node(AppNode, {mod_name, ModName}),
+    wrangler_misc:rewrite(AppNode, AppNode1).
+
+%% @doc Replaces the function name part of a function application node with `FunName'.
+%%     The node `AppNode' should match one of the templates specified `?FUN_APPY(M,F,A)'.
+-spec update_app_fun(syntaxTree(), syntaxTree()) ->syntaxTree().
+update_app_fun(AppNode, FunName) ->
+    AppNode1=update_app_node(AppNode, {fun_name, FunName}),
+    wrangler_misc:rewrite(AppNode, AppNode1).
+   
+%% @doc Replaces the arguments of a function application node with `Args'.
+%%     The node `AppNode' should match one of the templates specified `?FUN_APPY(M,F,A)'.
+-spec update_app_args(syntaxTree(), [syntaxTree()]|syntaxTree())->syntaxTree().
+update_app_args(AppNode, Args) ->
+    AppNode1=update_app_node(AppNode, {args, Args}),
+    wrangler_misc:rewrite(AppNode, AppNode1).
+
+-spec match_app_node(syntaxTree()) -> #fun_app{}.                            
+match_app_node(AppNode) ->
+    case match(?T("Fun@(N@@, M@, F@, Args@)"), AppNode) of
+        {true, Bind} ->
+            {'Fun@', Fun} = lists:keyfind('Fun@', 1, Bind),
+            {'M@', M} = lists:keyfind('M@', 1, Bind),
+            {'F@', F} = lists:keyfind('F@', 1, Bind),
+            {'Args@', Args} = lists:keyfind('Args@', 1, Bind),
+            case lists:member(fun_define_info(Fun), special_funs()) of 
+                true ->
+                    Args1 = convert_args(Args),
+                    #fun_app{mod_name=M, fun_name=F, args=Args1};
+                false ->
+                    match_app_node_1(AppNode)
+            end;
+        _ ->
+            match_app_node_1(AppNode)
+    end.
+
+match_app_node_1(AppNode) ->
+    case match(?T("Fun@(N@@, M@, F@, Args@, Opts@)"), AppNode) of
+        {true, Bind} ->
+            {'Fun@', Fun} = lists:keyfind('Fun@', 1, Bind),
+            {'M@', M} = lists:keyfind('M@', 1, Bind),
+            {'F@', F} = lists:keyfind('F@', 1, Bind),
+            {'Args@', Args} = lists:keyfind('Args@', 1, Bind),
+            case lists:member(fun_define_info(Fun), 
+                              [{erlang, spawn_opt, 4},
+                               {erlang, spawn_opt, 5}]) of 
+                true ->
+                    Args1 = convert_args(Args),
+                    #fun_app{mod_name=M, fun_name=F, args=Args1};
+                false ->
+                    match_app_node_2(AppNode)
+            end;
+        _ ->
+            match_app_node_2(AppNode)
+    end.
+
+match_app_node_2(AppNode) ->
+    case match(?T("Fun@(F@, Args@)"), AppNode) of
+        {true, Bind} ->
+            {'Fun@', Fun} = lists:keyfind('Fun@', 1, Bind),
+            {'F@', F} = lists:keyfind('F@', 1, Bind),
+            {'Args@', Args} = lists:keyfind('Args@', 1, Bind),
+            case fun_define_info(Fun) =={erlang, apply,2} of 
+                true ->
+                    Args1 = convert_args(Args),
+                    Name = wrangler_syntax:implicit_fun_name(F),
+                    case wrangler_syntax:type(Name) of
+                        arity_qualifier ->
+                            F1 =wrangler_syntax:arity_qualifier_body(Name),
+                            #fun_app{mod_name=none, fun_name=F1, args=Args1};
+                        module_qualifier ->
+                            M = wrangler_syntax:module_qualifier_argument(Name),
+                            Name1 = wrangler_syntax:module_qualifier_body(Name),
+                            F1 = wrangler_syntax:arity_qualifier_body(Name1),
+                            #fun_app{mod_name=M, fun_name=F1, args=Args1}
+                    end;
+                false ->
+                    match_app_node_3(AppNode)
+            end;
+        _ ->
+            match_app_node_3(AppNode)
+    end.
+match_app_node_3(AppNode) ->
+    case match(?T("F@(Args@@)"), AppNode) of 
+        {true, Bind} ->
+            {'F@', Fun} = lists:keyfind('F@', 1, Bind),
+            {'Args@@', Args} = lists:keyfind('Args@@', 1, Bind),
+            case wrangler_syntax:type(Fun) of 
+                module_qualifier ->
+                    M = wrangler_syntax:module_qualifier_argument(Fun),
+                    F= wrangler_syntax:module_qualifier_body(Fun),
+                    #fun_app{mod_name=M, fun_name=F, args=Args};
+                _ ->
+                    #fun_app{mod_name=none, fun_name=Fun, args=Args}
+            end;
+        _ ->
+            erlang:error(badarg, [AppNode])
+    end.
+
+-spec convert_args(syntaxTree()) -> syntaxTree()|[syntaxTree()].
+convert_args(Args) ->
+    case wrangler_syntax:type(Args) of
+        list ->
+            wrangler_syntax:list_elements(Args);
+        _ ->
+            Args
+    end.
+         
+-spec update_app_node(syntaxTree(), {atom(), syntaxTree()|[syntaxTree()]}) ->
+                             syntaxTree().
+update_app_node(AppNode, {Tag, Node}) ->
+    case match(?T("Fun@(N@@, M@, F@, Args@)"), AppNode) of
+        {true, Bind} ->
+            {'Fun@', Fun} = lists:keyfind('Fun@', 1, Bind),
+            {'N@@', N} = lists:keyfind('N@@', 1, Bind),
+            {'M@', M} = lists:keyfind('M@', 1, Bind),
+            {'F@', F} = lists:keyfind('F@', 1, Bind),
+            {'Args@', Args} = lists:keyfind('Args@', 1, Bind),
+            case lists:member(fun_define_info(Fun), special_funs()) of 
+                true ->
+                    NewArgs=case Tag of 
+                                mod_name ->
+                                    N++[Node,F,Args];
+                                fun_name ->
+                                    N++[M,Node,Args];
+                                args when is_list(Node)->
+                                    N++[M,F,wrangler_syntax:list(Node)];
+                                args ->
+                                    N++[M,F, Node]
+                            end,
+                    wrangler_syntax:application(Fun,NewArgs);
+                false->
+                    update_app_node_1(AppNode, {Tag,Node})
+            end;
+        false ->
+            update_app_node_1(AppNode, {Tag,Node})
+    end.
+update_app_node_1(AppNode, {Tag, Node}) ->
+    case match(?T("Fun@(N@@, M@, F@, Args@, Opts@)"), AppNode) of
+        {true, Bind} ->
+            {'Fun@', Fun} = lists:keyfind('Fun@', 1, Bind),
+            {'N@@', N} = lists:keyfind('N@@', 1, Bind),
+            {'M@', M} = lists:keyfind('M@', 1, Bind),
+            {'F@', F} = lists:keyfind('F@', 1, Bind),
+            {'Args@', Args} = lists:keyfind('Args@', 1, Bind),
+            {'Opts@', Opts} = lists:keyfind('Opts@', 1, Bind),
+            case lists:member(fun_define_info(Fun), 
+                              [{erlang, spawn_opt, 4},
+                               {erlang, spawn_opt, 5}]) of 
+                true ->
+                    NewArgs=case Tag of 
+                                mod_name ->
+                                    N++[Node,F,Args,Opts];
+                                fun_name ->
+                                    N++[M, Node,Args,Opts];
+                                args when is_list(Node)->
+                                    N++[M, F,wrangler_syntax:list(Node),Opts];
+                                args ->
+                                    N++[M, F,Node,Opts]
+                            end,
+                    wrangler_syntax:application(Fun,NewArgs);
+                false ->
+                    update_app_node_2(AppNode, {Tag, Node})
+            end;
+        _ ->
+            update_app_node_2(AppNode, {Tag, Node})
+    end.
+update_app_node_2(AppNode, {Tag, Node}) ->
+    case match(?T("Fun@(F@, Args@)"), AppNode) of
+        {true, Bind} ->
+            {'Fun@', Fun} = lists:keyfind('Fun@', 1, Bind),
+            {'F@', F} = lists:keyfind('F@', 1, Bind),
+            {'Args@', Args} = lists:keyfind('Args@', 1, Bind),
+            case fun_define_info(Fun)=={erlang, apply,2} of 
+                true ->
+                    Name = wrangler_syntax:implicit_fun_name(AppNode),
+                    NewArgs=case Tag of 
+                                mod_name ->
+                                    case wrangler_syntax:type(Name) of 
+                                        arity_qualifier ->
+                                            AppNode;
+                                        module_qualifier ->
+                                            B = wrangler_syntax:module_qualifier_body(Name),
+                                            Node1=wrangler_syntax:implicit_fun(
+                                                    wrangler_syntax:module_qualifier(Node, B)),
+                                            [Node1,Args]
+                                    end;
+                                fun_name ->
+                                    case wrangler_syntax:type(Name) of 
+                                        arity_qualifier ->
+                                            A = wrangler_syntax:arity_qualifier_argument(Name),
+                                            Node1 = wrangler_syntax:implicit_fun(Node, A),
+                                            [Node1, Args];
+                                        module_qualifier ->
+                                            B = wrangler_syntax:module_qualifier_body(Name),
+                                            A = wrangler_syntax:arity_qualifier_argument(
+                                                  wrangler_syntax:module_qualifier_argument(Name)),
+                                            Node1 =wrangler_syntax:implicit_fun(
+                                                     wrangler_syntax:module_qualifier(
+                                                       B,wrangler_syntax:arity_qualifier(Node, A))), 
+                                            [Node1,Args]
+                                        end;
+                                args when is_list(Node)->
+                                    [F,wrangler_syntax:list(Node)];
+                                args ->
+                                    [F,Node]
+                            end,
+                    wrangler_syntax:application(Fun,NewArgs);
+                false ->
+                    update_app_node_3(AppNode, {Tag, Node})
+            end;
+        _ ->
+            update_app_node_3(AppNode, {Tag, Node})
+    end.
+update_app_node_3(AppNode, {Tag, Node}) ->
+    case match(?T("F@(Args@@)"), AppNode) of 
+        {true, Bind} ->
+            {'F@', Fun} = lists:keyfind('F@', 1, Bind),
+            {'Args@@', Args} = lists:keyfind('Args@@', 1, Bind),
+            {M,F} = case wrangler_syntax:type(Fun) of 
+                        module_qualifier ->
+                            {wrangler_syntax:module_qualifier_argument(Fun),
+                            wrangler_syntax:module_qualifier_body(Fun)};
+                        _ -> 
+                            {none, Fun}
+                    end,
+            case Tag of 
+                mod_name ->
+                    wrangler_syntax:application(Node, F, Args);
+                fun_name ->
+                    wrangler_syntax:application(M, Node, Args);
+                args ->
+                    wrangler_syntax:application(M, F, Node)
+            end;
+        false ->
+            AppNode
+    end.
+
+-spec special_funs()->[mfa()].                          
+special_funs() ->
+    [{erlang, apply,3},
+     {erlang, hibernate,3}, 
+     {erlang, spawn,3},
+     {erlang, spawn,4},
+     {erlang, spawn_link, 3},
+     {erlang, spawn_link, 4},
+     {erlang, spawn_monitor,3}].
+
+%%@private
+-spec meta_apply_templates(mfa()) ->[{syntaxTree(), function()}].
+meta_apply_templates(_MFA={M,F,A}) ->
+    [{api_refac:template("F@(Args@@)"),  
+      fun(Node) -> 
+              fun_define_info(wrangler_syntax:application_operator(Node))
+                  == {M, F, A}
+      end},
+     {api_refac:template("M@:F@(Args@@)"),  
+      fun(Node) -> 
+              fun_define_info(wrangler_syntax:application_operator(Node))
+                  == {M, F, A}
+      end},
+     {api_refac:template("Fun@(F@,Args@)"),  
+      fun(Node) -> 
+              Op = wrangler_syntax:application_operator(Node),
+              Args = wrangler_syntax:application_arguments(Node),
+              Fun = hd(Args),
+              api_refac:fun_define_info(Op)=={erlang, apply,2} andalso
+                  fun_define_info(Fun)=={M,F,A}
+      end},
+     {api_refac:template("Fun@(N@@, M@, F@, Args@)"),  
+      fun(Node) -> 
+              Op = wrangler_syntax:application_operator(Node),
+              Args = wrangler_syntax:application_arguments(Node),
+              Fun = lists:nth(length(Args)-1, Args),
+              case lists:member(api_refac:fun_define_info(Op), 
+                                special_funs()) of
+                  true ->
+                      fun_define_info(Fun)=={M,F,A};
+                  false ->
+                      false
+              end
+      end},
+     {api_refac:template("Fun@(N@@, M@, F@, Args@, Opts@)"),  
+      fun(Node) -> 
+              Op = wrangler_syntax:application_operator(Node),
+              Args = wrangler_syntax:application_arguments(Node),
+              Fun = lists:nth(length(Args)-2, Args),
+              case lists:member(api_refac:fun_define_info(Op), 
+                                [{erlang, spawn_opt,4},
+                                 {erlang, spawn_opt, 5}]) of 
+                  true ->
+                      fun_define_info(Fun)=={M,F,A};
+                  false ->
+                      false
+              end
+      end}
+    ].
+
+
+%% not tested yet.
+get_mfas(File, Order) ->
+    case Order == td orelse Order == bu of
+        true ->
+            SortedFuns=wrangler_callgraph_server:get_sorted_funs(File),
+            {MFAs, _} = lists:unzip(SortedFuns),
+            case Order of
+                td ->
+                    lists:reverse(MFAs);
+                bu ->
+                    MFAs
+            end;
+        false ->
+            {ok, ModuleInfo} = api_refac:get_module_info(File),
+            case lists:keyfind(functions, 1, ModuleInfo) of
+                {functions, Fs} ->
+                    M = module_name(File),
+                    [{M,F,A} || {F,A}<-Fs];
+                false ->
+                    []
+            end
+    end.

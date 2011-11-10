@@ -54,11 +54,11 @@
 %%@private
 -module(refac_fold_expression).
 
--export([fold_expr_by_loc/5, 
+-export([fold_expr_by_loc/6, 
          fold_expr_by_loc_eclipse/5, 
 	 fold_expr_1_eclipse/5,
 	 do_fold_expression/5,
-	 fold_expr_by_name/7, 
+         do_fold_expression/6,
          fold_expr_by_name/8,
          fold_expr_by_name_eclipse/7]).
 
@@ -66,24 +66,25 @@
 
 -include("../include/wrangler_internal.hrl").
 
-%%-spec(fold_expr_by_loc/5::(filename(), integer(), integer(), [dir()], integer())->
+%%-spec(fold_expr_by_loc/5::(filename(), integer(), integer(), [dir()], atom(), integer())->
 %%	     {ok, [{integer(), integer(), integer(), integer(), syntaxTree(), 
 %%		    {filename(), atom(), syntaxTree(), integer()}}], string()}).
-fold_expr_by_loc(FileName, Line, Col, SearchPaths, TabWidth) ->
-    ?wrangler_io("\nCMD: ~p:fold_expr_by_loc(~p, ~p,~p,~p, ~p).\n", 
-		 [?MODULE, FileName, Line, Col, SearchPaths, TabWidth]),
-    fold_expression(FileName, Line, Col, SearchPaths, TabWidth, emacs).
+fold_expr_by_loc(FileName, Line, Col, SearchPaths, Editor, TabWidth) ->
+    ?wrangler_io("\nCMD: ~p:fold_expr_by_loc(~p, ~p,~p,~p,~p, ~p).\n", 
+		 [?MODULE, FileName, Line, Col, SearchPaths, Editor, TabWidth]),
+    fold_expression(FileName, Line, Col, SearchPaths, Editor, TabWidth).
 
 %%-spec(fold_expr_by_loc_eclipse/5::(filename(), integer(), integer(), [dir()], integer()) ->
 %%	     {ok,  {syntaxTree(),[{{{integer(), integer()}, {integer(), integer()}}, syntaxTree(),syntaxTree()}]}}).
 fold_expr_by_loc_eclipse(FileName, Line, Col, SearchPaths, TabWidth) ->
-    fold_expression(FileName, Line, Col, SearchPaths, TabWidth, eclipse).
+    fold_expression(FileName, Line, Col, SearchPaths, eclipse, TabWidth).
 
-fold_expression(FileName, Line, Col, SearchPaths, TabWidth, Editor) ->
-    Cmd = "CMD: " ++ atom_to_list(?MODULE) ++ ":fold_expression(" ++ "\"" ++ 
-	    FileName ++ "\", " ++ integer_to_list(Line) ++ 
-	      ", " ++ integer_to_list(Col) ++ ", " ++ "[" ++ wrangler_misc:format_search_paths(SearchPaths) ++ "],"
-         ++ integer_to_list(TabWidth) ++ ").",
+fold_expression(FileName, Line, Col, SearchPaths, Editor, TabWidth) ->
+     Cmd = "CMD: " ++ atom_to_list(?MODULE) ++ ":fold_expression(" ++ "\"" ++
+	     FileName ++ "\", " ++ integer_to_list(Line) ++
+	       ", " ++ integer_to_list(Col) ++ ", " ++ "[" ++ 
+        wrangler_misc:format_search_paths(SearchPaths) ++ "], "
+        ++ atom_to_list(Editor) ++ ", "++integer_to_list(TabWidth) ++ ").",
     {ok, {AnnAST, _Info}} = wrangler_ast_server:parse_annotate_file(FileName, true, SearchPaths, TabWidth),
     case pos_to_fun_clause(AnnAST, {Line, Col}) of
 	{ok, {Mod, FunName, _Arity, FunClauseDef, _ClauseIndex}} ->
@@ -95,7 +96,7 @@ fold_expression(FileName, Line, Col, SearchPaths, TabWidth, Editor) ->
 
 fold_expression_0(FileName, Candidates, FunClauseDef, Cmd, Editor, SearchPaths, TabWidth)->
     case Candidates of
-	[] ->
+	[] when Editor /=composite_emacs->
 	    throw({error, "No expressions that are suitable for folding "
 		   "against the selected function have been found!"});
 	_ -> ok
@@ -109,44 +110,42 @@ fold_expression_0(FileName, Candidates, FunClauseDef, Cmd, Editor, SearchPaths, 
             {ok, Regions, Cmd};
         eclipse -> {ok, {FunClauseDef, Candidates}};
         command ->
-            do_fold_expression(FileName, Regions, SearchPaths, TabWidth, "")
+            do_fold_expression(FileName, Regions, SearchPaths, command, TabWidth, "");
+        composite_emacs ->
+            {ok, Regions, Cmd}
+            %% do_fold_expression(FileName, Regions, SearchPaths, composite_emacs, TabWidth, "")
     end.
 
-%%-spec(fold_expr_by_name/7::(filename(), string(), string(), string(), 
-%%			    string(), [dir()], integer()) ->
-%%	     {ok, [{integer(), integer(), integer(), integer(), syntaxTree(), 
-%%		    {filename(), atom(), syntaxTree(), integer()}}], string()}).
-fold_expr_by_name(FileName, ModName, FunName, Arity, ClauseIndex,
-		  SearchPaths, TabWidth) ->
+fold_expr_by_name(FileName, ModName, FunName, Arity, ClauseIndex,SearchPaths, Editor, TabWidth) ->
+    ?wrangler_io("\nCMD: ~p:fold_expression_by_name(~p,~p,~p,~p,~p,~p, ~p, ~p).\n",
+                    [?MODULE, FileName, ModName, FunName, Arity, ClauseIndex, SearchPaths, Editor,TabWidth]),
     fold_by_name_par_checking(ModName, FunName, Arity, ClauseIndex),
-    fold_expr_by_name(FileName, list_to_atom(ModName), list_to_atom(FunName),
-		      list_to_integer(Arity), list_to_integer(ClauseIndex),
-		      SearchPaths, emacs, TabWidth).
+    fold_expr_by_name_1(FileName, list_to_atom(ModName), list_to_atom(FunName),
+		        list_to_integer(Arity), list_to_integer(ClauseIndex),
+		        SearchPaths, Editor, TabWidth).
 
 %%-spec(fold_expr_by_name_eclipse/7::(filename(), string(), string(), integer(), integer(), [dir()], integer())
 %%				   -> {ok, {syntaxTree(), [{{{integer(), integer()}, {integer(), integer()}}, syntaxTree(),syntaxTree()}]}}).
 fold_expr_by_name_eclipse(FileName, ModName, FunName, Arity, ClauseIndex, SearchPaths, TabWidth) ->
-    fold_expr_by_name(FileName, list_to_atom(ModName), list_to_atom(FunName), Arity, 
-		      ClauseIndex, SearchPaths, eclipse, TabWidth).
+    fold_expr_by_name_1(FileName, list_to_atom(ModName), list_to_atom(FunName), Arity,
+		        ClauseIndex, SearchPaths, eclipse, TabWidth).
 
-fold_expr_by_name(FileName, ModName, FunName, Arity, ClauseIndex, SearchPaths, Editor, TabWidth) ->
-     ?wrangler_io("\nCMD: ~p:fold_expression(~p,~p,~p,~p,~p,~p).\n",
-		  [?MODULE, FileName, ModName, FunName, Arity, ClauseIndex, TabWidth]),
-     Cmd = "CMD: " ++ atom_to_list(?MODULE) ++ ":fold_expression(" ++ "\"" ++
-	     FileName ++ "\", " ++ atom_to_list(ModName) ++ ", " ++ atom_to_list(FunName) ++
-	       ", " ++ integer_to_list(Arity) ++ ", " ++ integer_to_list(ClauseIndex) ++ ", ["
-											 ++ wrangler_misc:format_search_paths(SearchPaths) ++ "]," ++ integer_to_list(TabWidth) ++ ").",
-     {ok, {AnnAST, Info}} = wrangler_ast_server:parse_annotate_file(FileName, true, SearchPaths, TabWidth),
-     {value, {module, CurrentModName}} = lists:keysearch(module, 1, Info),
-     FileName1 = get_file_name(ModName, SearchPaths),
-     {ok, {AnnAST1, _Info1}} = wrangler_ast_server:parse_annotate_file(FileName1, true, SearchPaths, TabWidth),
-     case get_fun_clause_def(AnnAST1, FunName, Arity, ClauseIndex) of
-	 {ok, {Mod, _FunName, _Arity, FunClauseDef}} ->
-	     side_condition_analysis(FunClauseDef),
-	     Candidates = search_candidate_exprs(AnnAST, {Mod, CurrentModName}, FunName, FunClauseDef),
-             fold_expression_0(FileName, Candidates, FunClauseDef, Cmd, Editor, SearchPaths, TabWidth);
-         {error, _Reason} ->
-	     throw({error, "The specified funcion clause does not exist!"})
+fold_expr_by_name_1(FileName, ModName, FunName, Arity, ClauseIndex, SearchPaths, Editor, TabWidth) ->
+    Cmd = "CMD: " ++ atom_to_list(?MODULE) ++ ":fold_expression(" ++ "\"" ++
+        FileName ++ "\", " ++ atom_to_list(ModName) ++ ", " ++ atom_to_list(FunName) ++
+        ", " ++ integer_to_list(Arity) ++ ", " ++ integer_to_list(ClauseIndex) ++ ", ["
+        ++ wrangler_misc:format_search_paths(SearchPaths) ++ "]," ++ integer_to_list(TabWidth) ++ ").",
+    {ok, {AnnAST, Info}} = wrangler_ast_server:parse_annotate_file(FileName, true, SearchPaths, TabWidth),
+    {value, {module, CurrentModName}} = lists:keysearch(module, 1, Info),
+    FileName1 = get_file_name(ModName, SearchPaths),
+    {ok, {AnnAST1, _Info1}} = wrangler_ast_server:parse_annotate_file(FileName1, true, SearchPaths, TabWidth),
+    case get_fun_clause_def(AnnAST1, FunName, Arity, ClauseIndex) of
+        {ok, {Mod, _FunName, _Arity, FunClauseDef}} ->
+            side_condition_analysis(FunClauseDef),
+            Candidates = search_candidate_exprs(AnnAST, {Mod, CurrentModName}, FunName, FunClauseDef),
+            fold_expression_0(FileName, Candidates, FunClauseDef, Cmd, Editor, SearchPaths, TabWidth);
+        {error, _Reason} ->
+            throw({error, "The specified funcion clause does not exist!"})
      end.
 
 get_file_name(ModName, SearchPaths) ->
@@ -160,7 +159,7 @@ get_file_name(ModName, SearchPaths) ->
 			    " following Wrangler's SearchPaths!"});
 	[FileName] -> FileName;
 	_ -> throw({error, "Wrangler found more than one file defining the module, " ++ atom_to_list(ModName)
-											   ++ ", folloing the SearchPaths  specified!"})
+                    ++ ", folloing the SearchPaths  specified!"})
     end.
 
 %%-spec(fold_expr_1_eclipse/5::(filename(), syntaxTree(),
@@ -180,10 +179,12 @@ fold_expression_1_eclipse_1(AnnAST, Body, [Cand| Tail]) ->
 					      AnnAST, {Body, Cand}),
     fold_expression_1_eclipse_1(AnnAST1, Body, Tail).
 
-do_fold_expression(FileName, CandidatesToFold, SearchPaths, TabWidth, LogMsg) ->
+do_fold_expression(FileName,  CandidatesToFold, SearchPaths, TabWidth, LogMsg) ->
+    do_fold_expression(FileName,  CandidatesToFold, SearchPaths, emacs, TabWidth, LogMsg).
+do_fold_expression(FileName, CandidatesToFold, SearchPaths, Editor, TabWidth, LogMsg) ->
     {ok, {AnnAST, _Info}} = wrangler_ast_server:parse_annotate_file(FileName, true, SearchPaths, TabWidth),
     AnnAST1 = fold_expression_1_1(AnnAST, CandidatesToFold),
-    wrangler_write_file:write_refactored_files_for_preview([{{FileName, FileName}, AnnAST1}], TabWidth, LogMsg),
+    wrangler_write_file:write_refactored_files([{{FileName, FileName}, AnnAST1}], Editor, TabWidth, LogMsg),
     {ok, [FileName]}.
 
 fold_expression_1_1(AnnAST, []) ->
