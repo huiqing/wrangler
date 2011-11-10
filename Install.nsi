@@ -1,6 +1,6 @@
 
 !define PRODUCT_NAME "Wrangler"
-!define PRODUCT_VERSION "0.9.4"
+!define PRODUCT_VERSION "1.0"
 !define PRODUCT_PUBLISHER "Huiqing Li and Simon Thompson"
 !define PRODUCT_WEB_SITE "www.cs.kent.ac.uk/projects/wrangler"
 !define PRODUCT_UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}"
@@ -60,6 +60,8 @@ ShowUnInstDetails show
  var varErlangDir1
  var varINSTDIR
  var varHOME
+ var varGenRefacSrcFiles
+ var varGenCompRefacSrcFiles
 ;=============================================
 
 Section "Install"
@@ -103,7 +105,7 @@ CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\Uninstall Wrangler.lnk" "$INSTDIR\${
                              .\src\api_wrangler.erl \
                              .\src\distel.erl \
                              .\src\emacs_inspec.erl \
-                             .\src\emacs_refac.erl \
+                             .\src\emacs_wrangler.erl \
                              .\src\gen_composite_refac.erl \
                              .\src\gen_refac.erl \
                              .\src\inspec_examples.erl \
@@ -112,29 +114,21 @@ CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\Uninstall Wrangler.lnk" "$INSTDIR\${
 StrCpy $varWranglerSrcFiles0 ".\src\refac_gen.erl \
                              .\src\refac_inc_sim_code.erl \
                              .\src\refac_inline_var.erl \
-                             .\src\refac_intro_import.erl \
                              .\src\refac_intro_new_var.erl \
-                             .\src\refac_keysearch_to_keyfind.erl \
-                             .\src\refac_list.erl \
                              .\src\refac_move_fun.erl \
                              .\src\refac_new_fun.erl \
-                             .\src\refac_new_fun_rule_based.erl \
                              .\src\refac_new_let.erl \
                              .\src\refac_new_macro.erl \
                              .\src\refac_qc_gen.erl \
                              .\src\refac_register_pid.erl \
-                             .\src\refac_remove_arg.erl \
-                             .\src\refac_remove_import.erl \
                              .\src\refac_rename_fun.erl \
                              .\src\refac_rename_mod.erl \
                              .\src\refac_rename_process.erl \
                              .\src\refac_rename_var.erl \
                              .\src\refac_sim_code.erl"
 StrCpy $varWranglerSrcFiles1  ".\src\refac_sim_expr_search.erl \
-                             .\src\refac_specialise.erl \
                              .\src\refac_state_to_record.erl \
-                             .\src\refac_swap_args.erl \
-                             .\src\refac_tuple.erl \
+                            .\src\refac_tuple.erl \
                             .\src\refac_unfold_fun_app.erl \
                             .\src\wrangler.erl \
                             .\src\wrangler_annotate_ast.erl \
@@ -162,25 +156,28 @@ StrCpy $varWranglerSrcFiles2 ".\src\wrangler_error_logger.erl \
                              .\src\wrangler_preview_server.erl \
                              .\src\wrangler_recomment.erl \
                              .\src\wrangler_refacs.erl \
-                             .\src\wrangler_scan_with_layout.erl"
+                             .\src\wrangler_scan_with_layout.erl \
+							 .\src\distel_ie.erl \
+							 .\src\fdoc.erl \
+							 .\src\otp_doc.erl"
 StrCpy $varWranglerSrcFiles3  ".\src\wrangler_side_effect.erl \
                              .\src\wrangler_slice.erl \
                              .\src\wrangler_suffix_tree.erl \
                              .\src\wrangler_sup.erl \
-                             .\src\wrangler_type_annotation.erl \
                              .\src\wrangler_type_info.erl \
                              .\src\wrangler_undo_server.erl \
                              .\src\wrangler_unification.erl \
                              .\src\wrangler_write_file.erl \
-							 .\src\refac_apply_to_remote_call.erl \
-                             .\src\refac_batch_rename_fun.erl \
-                             .\src\refac_clone_evolution.erl \
-                             .\src\refac_comment_out_spec.erl \
-                             .\src\refac_duplicated_code.erl \
+						     .\src\refac_duplicated_code.erl \
                              .\src\refac_expr_search.erl \
                              .\src\refac_fold_against_macro.erl \
 							 .\src\refac_fold_expression.erl \
-                             .\src\refac_fun_to_process.erl"
+                             .\src\refac_fun_to_process.erl \ 
+							 .\src\api_interface.erl \
+							 .\src\api_spec.erl \
+							 .\src\wrangler_cmd_server.erl \
+							 .\src\wrangler_backup_server.erl \
+							 .\src\wrangler_add_new_refac.erl"
     
   Push %WRANGLER_DIR%                        #text to be replaced
   Push $varWranglerDir                       #replace with
@@ -194,10 +191,13 @@ StrCpy $varWranglerSrcFiles3  ".\src\wrangler_side_effect.erl \
   CreateDirectory $INSTDIR\ebin
   ;;CopyFiles $INSTDIR\c_src\suffixtree.exe $INSTDIR\bin\suffixtree.exe
   RMDir /r $INSTDIR\c_src
+  Call FindFilesInGenRefacDir
+  Call FindFilesInGenCompRefacDir
   Call CheckErlang
+  Call GenMenuItems
   Call CheckErlangWranglerModeInEmacs
   Call CheckCookie
-  Delete $INSTDIR\src\wrangler_parse.erl
+
 
 WriteUninstaller "$INSTDIR\${PRODUCT_NAME}_Uninst.exe"
 WriteRegStr HKLM "${PRODUCT_DIR_REGKEY}" "${PRODUCT_NAME}" "$INSTDIR\${PRODUCT_NAME}.exe"
@@ -233,211 +233,180 @@ Function CheckErlang
   Push $R3
   Push $R4
   Push $R5
+  Push $R6
+  Push $R7
   !define ERLCEXE "erlc.exe"
 
   ClearErrors
+     
+  ReadRegStr $R0 HKLM "SOFTWARE\Ericsson\Erlang\5.8.5" ""
+  StrCpy $varErlangDir $R0
+  StrCpy $R1 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles"
+  StrCpy $R2 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles0"
+  StrCpy $R3 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles1"
+  StrCpy $R4 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles2"
+  StrCpy $R5 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles3"
+  StrCpy $R6 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varGenRefacSrcFiles"
+  StrCpy $R7 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varGenCompRefacSrcFiles"
+  StrCpy $varErlangEmacsDir "$R0\lib\tools-2.6.6.5\emacs"
+  IfErrors 0 ErlangFound
   
   ReadRegStr $R0 HKLM "SOFTWARE\Ericsson\Erlang\5.8.4" ""
   StrCpy $varErlangDir $R0
-  StrCpy $R1 "$R0\bin\${ERLCEXE} ./src/wrangler_parse.yrl"
-  StrCpy $R2 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles"
-  StrCpy $R3 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles0"
-  StrCpy $R4 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles1"
-  StrCpy $R5 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles2"
-  StrCpy $R6 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles3"
+  StrCpy $R1 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles"
+  StrCpy $R2 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles0"
+  StrCpy $R3 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles1"
+  StrCpy $R4 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles2"
+  StrCpy $R5 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles3"
+  StrCpy $R6 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varGenRefacSrcFiles"
+  StrCpy $R7 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varGenCompRefacSrcFiles"
+  StrCpy $varErlangEmacsDir "$R0\lib\tools-2.6.6.4\emacs"
+  IfErrors 0 ErlangFound
+  
+  ReadRegStr $R0 HKLM "SOFTWARE\Ericsson\Erlang\5.8.4" ""
+  StrCpy $varErlangDir $R0
+  StrCpy $R1 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles"
+  StrCpy $R2 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles0"
+  StrCpy $R3 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles1"
+  StrCpy $R4 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles2"
+  StrCpy $R5 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles3"
+  StrCpy $R6 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varGenRefacSrcFiles"
+  StrCpy $R7 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varGenCompRefacSrcFiles"
   StrCpy $varErlangEmacsDir "$R0\lib\tools-2.6.6.4\emacs"
   IfErrors 0 ErlangFound
   
   ReadRegStr $R0 HKLM "SOFTWARE\Ericsson\Erlang\5.8.3" ""
   StrCpy $varErlangDir $R0
-  StrCpy $R1 "$R0\bin\${ERLCEXE} ./src/wrangler_parse.yrl"
-  StrCpy $R2 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles"
-  StrCpy $R3 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles0"
-  StrCpy $R4 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles1"
-  StrCpy $R5 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles2"
-  StrCpy $R6 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles3"
+  StrCpy $R1 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles"
+  StrCpy $R2 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles0"
+  StrCpy $R3 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles1"
+  StrCpy $R4 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles2"
+  StrCpy $R5 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles3"
+  StrCpy $R6 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varGenRefacSrcFiles"
+  StrCpy $R7 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varGenCompRefacSrcFiles"
   StrCpy $varErlangEmacsDir "$R0\lib\tools-2.6.6.3\emacs"
   IfErrors 0 ErlangFound
   
     
   ReadRegStr $R0 HKLM "SOFTWARE\Ericsson\Erlang\5.8.2" ""
   StrCpy $varErlangDir $R0
-  StrCpy $R1 "$R0\bin\${ERLCEXE} ./src/wrangler_parse.yrl"
-  StrCpy $R2 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles"
-  StrCpy $R3 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles0"
-  StrCpy $R4 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles1"
-  StrCpy $R5 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles2"
-  StrCpy $R6 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles3"
+  StrCpy $R1 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles"
+  StrCpy $R2 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles0"
+  StrCpy $R3 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles1"
+  StrCpy $R4 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles2"
+  StrCpy $R5 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles3"
+  StrCpy $R6 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varGenRefacSrcFiles"
+  StrCpy $R7 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varGenCompRefacSrcFiles"
   StrCpy $varErlangEmacsDir "$R0\lib\tools-2.6.6.2\emacs"
   IfErrors 0 ErlangFound
   
   ReadRegStr $R0 HKLM "SOFTWARE\Ericsson\Erlang\5.8.1.1" ""
   StrCpy $varErlangDir $R0
-  StrCpy $R1 "$R0\bin\${ERLCEXE} ./src/wrangler_parse.yrl"
-  StrCpy $R2 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles"
-  StrCpy $R3 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles0"
-  StrCpy $R4 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles1"
-  StrCpy $R5 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles2"
-  StrCpy $R6 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles3"
+  StrCpy $R1 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles"
+  StrCpy $R2 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles0"
+  StrCpy $R3 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles1"
+  StrCpy $R4 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles2"
+  StrCpy $R5 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles3"
+  StrCpy $R6 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varGenRefacSrcFiles"
+  StrCpy $R7 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varGenCompRefacSrcFiles"
   StrCpy $varErlangEmacsDir "$R0\lib\tools-2.6.6.1\emacs"
   IfErrors 0 ErlangFound
   
   ReadRegStr $R0 HKLM "SOFTWARE\Ericsson\Erlang\5.8.1" ""
   StrCpy $varErlangDir $R0
-  StrCpy $R1 "$R0\bin\${ERLCEXE} ./src/wrangler_parse.yrl"
-  StrCpy $R2 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles"
-  StrCpy $R3 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles0"
-  StrCpy $R4 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles1"
-  StrCpy $R5 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles2"
-  StrCpy $R6 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles3"
+  StrCpy $R1 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles"
+  StrCpy $R2 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles0"
+  StrCpy $R3 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles1"
+  StrCpy $R4 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles2"
+  StrCpy $R5 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles3"
+  StrCpy $R6 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varGenRefacSrcFiles"
+  StrCpy $R7 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varGenCompRefacSrcFiles"
   StrCpy $varErlangEmacsDir "$R0\lib\tools-2.6.6.1\emacs"
   IfErrors 0 ErlangFound
   
   ReadRegStr $R0 HKLM "SOFTWARE\Ericsson\Erlang\5.8" ""
   StrCpy $varErlangDir $R0
-  StrCpy $R1 "$R0\bin\${ERLCEXE} ./src/wrangler_parse.yrl"
-  StrCpy $R2 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles"
-  StrCpy $R3 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles0"
-  StrCpy $R4 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles1"
-  StrCpy $R5 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles2"
-  StrCpy $R6 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles3"
+  StrCpy $R1 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles"
+  StrCpy $R2 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles0"
+  StrCpy $R3 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles1"
+  StrCpy $R4 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles2"
+  StrCpy $R5 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles3"
+  StrCpy $R6 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varGenRefacSrcFiles"
+  StrCpy $R7 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varGenCompRefacSrcFiles"
   StrCpy $varErlangEmacsDir "$R0\lib\tools-2.6.6\emacs"
   IfErrors 0 ErlangFound
   
   ReadRegStr $R0 HKLM "SOFTWARE\Ericsson\Erlang\5.7.5" ""
   StrCpy $varErlangDir $R0
-  StrCpy $R1 "$R0\bin\${ERLCEXE} ./src/wrangler_parse.yrl"
-  StrCpy $R2 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles"
-  StrCpy $R3 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles0"
-  StrCpy $R4 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles1"
-  StrCpy $R5 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles2"
-  StrCpy $R6 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles3"
+  StrCpy $R1 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles"
+  StrCpy $R2 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles0"
+  StrCpy $R3 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles1"
+  StrCpy $R4 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles2"
+  StrCpy $R5 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles3"
+  StrCpy $R6 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varGenRefacSrcFiles"
+  StrCpy $R7 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varGenCompRefacSrcFiles"
   StrCpy $varErlangEmacsDir "$R0\lib\tools-2.6.5.1\emacs"
   IfErrors 0 ErlangFound
    
   ReadRegStr $R0 HKLM "SOFTWARE\Ericsson\Erlang\5.7.4" ""
   StrCpy $varErlangDir $R0
-  StrCpy $R1 "$R0\bin\${ERLCEXE} ./src/wrangler_parse.yrl"
-  StrCpy $R2 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles"
-  StrCpy $R3 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles0"
-  StrCpy $R4 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles1"
-  StrCpy $R5 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles2"
-  StrCpy $R6 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles3"
+  StrCpy $R1 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles"
+  StrCpy $R2 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles0"
+  StrCpy $R3 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles1"
+  StrCpy $R4 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles2"
+  StrCpy $R5 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles3"
+  StrCpy $R6 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varGenRefacSrcFiles"
+  StrCpy $R7 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varGenCompRefacSrcFiles"
   StrCpy $varErlangEmacsDir "$R0\lib\tools-2.6.5\emacs"
   IfErrors 0 ErlangFound
   
   ReadRegStr $R0 HKLM "SOFTWARE\Ericsson\Erlang\5.7.3" ""
   StrCpy $varErlangDir $R0
-  StrCpy $R1 "$R0\bin\${ERLCEXE} ./src/wrangler_parse.yrl"
-  StrCpy $R2 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles"
-  StrCpy $R3 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles0"
-  StrCpy $R4 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles1"
-  StrCpy $R5 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles2"
-  StrCpy $R6 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles3"
+  StrCpy $R1 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles"
+  StrCpy $R2 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles0"
+  StrCpy $R3 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles1"
+  StrCpy $R4 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles2"
+  StrCpy $R5 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles3"
+  StrCpy $R6 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varGenRefacSrcFiles"
+  StrCpy $R7 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varGenCompRefacSrcFiles"
   StrCpy $varErlangEmacsDir "$R0\lib\tools-2.6.4\emacs"
   IfErrors 0 ErlangFound
   
   ReadRegStr $R0 HKLM "SOFTWARE\Ericsson\Erlang\5.7.2" ""
   StrCpy $varErlangDir $R0
-  StrCpy $R1 "$R0\bin\${ERLCEXE} ./src/wrangler_parse.yrl"
-  StrCpy $R2 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles"
-  StrCpy $R3 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles0"
-  StrCpy $R4 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles1"
-  StrCpy $R5 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles2"
-  StrCpy $R6 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles3"
+  StrCpy $R1 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles"
+  StrCpy $R2 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles0"
+  StrCpy $R3 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles1"
+  StrCpy $R4 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles2"
+  StrCpy $R5 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles3"
+  StrCpy $R4 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles3"
+  StrCpy $R6 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varGenRefacSrcFiles"
+  StrCpy $R7 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varGenCompRefacSrcFiles"
   StrCpy $varErlangEmacsDir "$R0\lib\tools-2.6.4\emacs"
   IfErrors 0 ErlangFound
   
   ReadRegStr $R0 HKLM "SOFTWARE\Ericsson\Erlang\5.7.1" ""
   StrCpy $varErlangDir $R0
-  StrCpy $R1 "$R0\bin\${ERLCEXE} ./src/wrangler_parse.yrl"
-  StrCpy $R2 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles"
-  StrCpy $R3 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles0"
-  StrCpy $R4 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles1"
-  StrCpy $R5 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles2"
-  StrCpy $R6 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles3"
+  StrCpy $R1 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles"
+  StrCpy $R2 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles0"
+  StrCpy $R3 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles1"
+  StrCpy $R4 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles2"
+  StrCpy $R5 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles3"
+  StrCpy $R6 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varGenRefacSrcFiles"
+  StrCpy $R7 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varGenCompRefacSrcFiles"
   StrCpy $varErlangEmacsDir "$R0\lib\tools-2.6.4\emacs"
   IfErrors 0 ErlangFound
   
   ReadRegStr $R0 HKLM "SOFTWARE\Ericsson\Erlang\5.7" ""
   StrCpy $varErlangDir $R0
-  StrCpy $R1 "$R0\bin\${ERLCEXE} ./src/wrangler_parse.yrl"
-  StrCpy $R2 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles"
-  StrCpy $R3 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles0"
-  StrCpy $R4 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles1"
-  StrCpy $R5 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles2"
-  StrCpy $R6 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles3"
+  StrCpy $R1 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles"
+  StrCpy $R2 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles0"
+  StrCpy $R3 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles1"
+  StrCpy $R4 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles2"
+  StrCpy $R5 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles3"
+  StrCpy $R6 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varGenRefacSrcFiles"
+  StrCpy $R7 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varGenCompRefacSrcFiles"
   StrCpy $varErlangEmacsDir "$R0\lib\tools-2.6.3\emacs"
-  IfErrors 0 ErlangFound
-
-  
-  ClearErrors
-  ReadRegStr $R0 HKLM "SOFTWARE\Ericsson\Erlang\5.6.5" ""
-  StrCpy $varErlangDir $R0
-  StrCpy $R1 "$R0\bin\${ERLCEXE} ./src/wrangler_parse.yrl"
-  StrCpy $R2 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles"
-  StrCpy $R3 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles0"
-  StrCpy $R4 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles1"
-  StrCpy $R5 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles2"
-  StrCpy $R6 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles3"
-  StrCpy $varErlangEmacsDir "$R0\lib\tools-2.6.2\emacs"
-  IfErrors 0 ErlangFound
-
-  ReadRegStr $R0 HKLM "SOFTWARE\Ericsson\Erlang\5.6.4" ""
-  StrCpy $varErlangDir $R0
-  StrCpy $R1 "$R0\bin\${ERLCEXE} ./src/wrangler_parse.yrl"
-  StrCpy $R2 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles"
-  StrCpy $R3 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles0"
-  StrCpy $R4 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles1"
-  StrCpy $R5 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles2"
-  StrCpy $R6 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles3"
-  StrCpy $varErlangEmacsDir "$R0\lib\tools-2.6.2\emacs"
-  IfErrors 0 ErlangFound
-  
-  ClearErrors
-  ReadRegStr $R0 HKLM "SOFTWARE\Ericsson\Erlang\5.6.3" ""
-  StrCpy $varErlangDir $R0
-  StrCpy $R1 "$R0\bin\${ERLCEXE} ./src/wrangler_parse.yrl"
-  StrCpy $R2 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles"
-  StrCpy $R3 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles0"
-  StrCpy $R4 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles1"
-  StrCpy $R5 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles2"
-  StrCpy $R6 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles3"
-  StrCpy $varErlangEmacsDir "$R0\lib\tools-2.6.1\emacs"
-  IfErrors 0 ErlangFound
-  
-  ReadRegStr $R0 HKLM "SOFTWARE\Ericsson\Erlang\5.6.2" ""
-  StrCpy $varErlangDir $R0
-  StrCpy $R1 "$R0\bin\${ERLCEXE} ./src/wrangler_parse.yrl"
-  StrCpy $R2 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles"
-  StrCpy $R3 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles0"
-  StrCpy $R4 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles1"
-  StrCpy $R5 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles2"
-  StrCpy $R6 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles3"
-  StrCpy $varErlangEmacsDir "$R0\lib\tools-2.6.1\emacs"
-  IfErrors 0 ErlangFound
-
-  ClearErrors
-  ReadRegStr $R0 HKLM "SOFTWARE\Ericsson\Erlang\5.6.1" ""
-  StrCpy $varErlangDir $R0
-  StrCpy $R1 "$R0\bin\${ERLCEXE} ./src/wrangler_parse.yrl"
-  StrCpy $R2 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles"
-  StrCpy $R3 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles0"
-  StrCpy $R4 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles1"
-  StrCpy $R5 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles2"
-  StrCpy $R6 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles3"
-  StrCpy $varErlangEmacsDir "$R0\lib\tools-2.6.1\emacs"
-  IfErrors 0 ErlangFound
-
-  ReadRegStr $R0 HKLM "SOFTWARE\Ericsson\Erlang\5.6" ""
-  StrCpy $varErlangDir $R0
-  StrCpy $R1 "$R0\bin\${ERLCEXE} ./src/wrangler_parse.yrl"
-  StrCpy $R2 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles"
-  StrCpy $R3 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles0"
-  StrCpy $R4 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles1"
-  StrCpy $R5 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles2"
-  StrCpy $R6 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles3"
-  StrCpy $varErlangEmacsDir "$R0\lib\tools-2.6\emacs"
   IfErrors 0 ErlangFound
   MessageBox MB_OK|MB_ICONINFORMATION "No Erlang installation was found on your system. \
   Please ensure that Erlang in installed on your computer before installing Wrangler."
@@ -453,7 +422,8 @@ Function CheckErlang
   ExecWait $R4
   ExecWait $R5
   ExecWait $R6
- 
+  ExecWait $R7
+  pop $R7
   pop $R6
   pop $R5
   pop $R4
@@ -512,6 +482,46 @@ function un.RemoveWranglerModeFromEmacs
 
    exit:
    Pop $R0
+FunctionEnd
+
+Function FindFilesInGenRefacDir
+ClearErrors
+StrCpy $varGenRefacSrcFiles ""
+FindFirst $0 $1 "$varINSTDIR/src/gen_refacs/*.erl"
+loop:
+  ;;MessageBox MB_OK "$1"
+  StrCmp $1 "" done
+  StrCpy $varGenRefacSrcFiles "$varGenRefacSrcFiles .\src\gen_refacs\$1"
+  FindNext $0 $1
+  Goto loop
+done:
+;;MessageBox MB_OK "$varGenRefacSrcFiles"
+FindClose $0
+FunctionEnd
+
+Function FindFilesInGenCompRefacDir
+ClearErrors
+StrCpy $varGenCompRefacSrcFiles ""
+FindFirst $0 $1 "$varINSTDIR/src/gen_composite_refacs/*.erl"
+loop:
+  ;;MessageBox MB_OK "$1"
+  StrCmp $1 "" done
+  StrCpy $varGenCompRefacSrcFiles "$varGenCompRefacSrcFiles .\src\gen_composite_refacs\$1"
+  FindNext $0 $1
+  Goto loop
+done:
+;;MessageBox MB_OK "$varGenCompRefacSrcFiles"
+FindClose $0
+FunctionEnd
+
+Function GenMenuItems
+ClearErrors
+Push $R0
+Push $R1
+StrCpy $R1 "$varErlangDir\bin\escript.exe .\ebin\dynamic_menu_items .\elisp\wrangler.el"
+ExecWait $R1
+Pop $R1
+Pop $R0
 FunctionEnd
 
 function CheckErlangWranglerModeInEmacs
