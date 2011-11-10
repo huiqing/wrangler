@@ -72,9 +72,9 @@
 
 -define(T(Template), api_refac:template(Template)).
  
--define(QUOTE(Str), api_refac:quote(Str)).
+-define(TO_AST(Str), api_refac:quote(Str)).
 
--define(SPLICE(Node), api_refac:splice(Node)).
+-define(PP(Node), api_refac:pp(Node)).
 
 -define(COLLECT(Temp,Collector, Cond),
         fun()->
@@ -179,6 +179,9 @@
 -define(atomic(CRs), {atomic, CRs}).
 
 -define(refac_(RefacName, Args), {refac_, RefacName, fun()->Args end}).
+
+-define(refac_(RefacName, Args, SearchPaths),
+        {refac_, RefacName, fun()->Args++[SearchPaths] end}).
 
 -define(current(M,F,A),
         wrangler_cmd_server:update_entity({M,F,A})).
