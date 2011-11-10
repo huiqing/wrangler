@@ -1,7 +1,7 @@
 
                     Wrangler, the Erlang Refactorer
                 a snapshot of our current prototype
-                            08/06/2011
+                            01/11/2011
               http://www.cs.kent.ac.uk/projects/wrangler/
 
 --------------------------------------------------------------------------------
@@ -225,6 +225,12 @@ with the correct directory; and <ToolsVer> with the correct version number.
  the boundary of the system by giving the list of directories to
  search for Erlang source files/header files that could be affected by a
  refactoring.
+
+------------------------Major changes from wrangler-0.9.3----------
+
+-- A DSL for composing composite refactorings froom elementary ones.
+-- Consistent refactoring of type specs when a function interface is changed.
+-- A number of bug fixes.
 
 ------------------------Major changes from Wrangler-0.9.2.4--------
 -- A framework for users to compose their own refactoring or 
