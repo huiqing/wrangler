@@ -45,12 +45,12 @@
 %% </p>
 %% @end
 
-%% @private
+%% @private 
 -module(refac_rename_var).
 
 -export([rename_var/6, rename_var/7, rename_var_composite/7, rename_var_eclipse/6]).
 
--export([rename/3, cond_check/4]).
+-export([rename/3, cond_check/4, get_var_name/5]).
 
 -include("../include/wrangler_internal.hrl").
 
@@ -115,12 +115,22 @@ rename_var(FName, Line, Col, NewName, SearchPaths, Editor, TabWidth) ->
 	       emacs ->
 		   {ok, []};
 	       _ ->
-		   Content = wrangler_prettypr:print_ast(wrangler_misc:file_format(FName), AnnAST1, TabWidth),
-		   {ok, [{FName, FName, Content}]}
-	   end
+                   wrangler_write_file:write_refactored_files(
+                     [{{FName, FName}, AnnAST1}], Editor, TabWidth, Cmd1)
+           end
     end.
 
 
+%% =====================================================================
+%%-spec get_var_name/5::(filename(), integer(), integer(), [dir()], integer()) -> string().
+get_var_name(FName, Line, Col, SearchPaths, TabWidth) ->
+    {ok, {AnnAST1, _Info1}} = wrangler_ast_server:parse_annotate_file(FName, true, SearchPaths, TabWidth),
+    case api_interface:pos_to_var_name(AnnAST1, {Line, Col}) of
+        {ok, {VarName, _DefinePos}} ->
+            atom_to_list(VarName);
+        {error, _} ->
+            ""
+    end.
 %% =====================================================================
 %%-spec cond_check(syntaxTree(), [pos()], atom(),atom())-> term().
 cond_check(Form, Pos, _VarName,  NewName) ->

@@ -53,9 +53,10 @@
 
 %% @private
 -module(refac_rename_fun).
-
+ 
 -export([rename_fun/7, rename_fun_1/6, rename_fun_1/7,
-         rename_fun_eclipse/6, rename_fun_1_eclipse/6]).
+         rename_fun_eclipse/6, rename_fun_1_eclipse/6,
+         get_fun_name/5]).
 
 -export([rename_fun_by_name/6, rename_fun_by_name/7]).
 
@@ -179,9 +180,9 @@ rename_fun(FileName, Line, Col, NewName, SearchPaths, Editor, TabWidth) ->
 		    case Editor of
 			emacs -> {ok, [], false};
 			eclipse ->
-			    FileContent = wrangler_prettypr:print_ast(wrangler_misc:file_format(FileName), AnnAST, TabWidth),
-			    {ok, [{FileName, FileName, FileContent}]}
-		    end
+                            wrangler_write_file:write_refactored_files(
+                              [{{FileName, FileName}, AnnAST}], Editor, TabWidth, "")
+                    end
 	    end;
 	{error, Reason} ->
 	    {error, Reason}
@@ -646,3 +647,14 @@ not_renamed_warn_msg(FunName) ->
 
 rewrite(E1, E2) ->
     wrangler_syntax:copy_pos(E1, wrangler_syntax:copy_attrs(E1, E2)).
+
+
+%%-spec(get_fun_name/5::(string(), integer(), integer(), [dir()], integer()) -> string().
+get_fun_name(FileName, Line, Col, SearchPaths, TabWidth) ->
+    {ok, {AnnAST, _Info}} = wrangler_ast_server:parse_annotate_file(FileName, true, SearchPaths, TabWidth),
+    case api_interface:pos_to_fun_name(AnnAST, {Line, Col}) of
+        {ok, {_Mod, Fun, _Arity, _, _DefinePos}} ->
+            atom_to_list(Fun);
+        _ ->
+            ""
+    end.

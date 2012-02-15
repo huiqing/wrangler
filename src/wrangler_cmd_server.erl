@@ -67,7 +67,7 @@
 -endif.
 
 start_link(CR) ->
-    gen_server:start({local, ?MODULE}, ?MODULE, CR, []).
+    gen_server:start({local, ?MODULE}, ?MODULE, CR, [{timeout, infinity}]).
 
 init(CR) ->
     ?wrangler_debug("CR:\n~p\n", [CR]),
@@ -80,7 +80,7 @@ init(CR) ->
 
 
 get_next_command(PrevResult) ->
-    gen_server:call(?MODULE, {get_next_command, PrevResult}).
+    gen_server:call(?MODULE, {get_next_command, PrevResult}, infinity).
 
 stop() ->
     gen_server:cast(?MODULE, stop).
@@ -423,12 +423,18 @@ generate_a_cmd({lazy_gen, Gen}) ->
         Cmd ->
             Cmd
     end;
-generate_a_cmd(Cmd={refac_,RefacName, Args0}) ->
+generate_a_cmd(Cmd={refac_,RefacName, Args0})->
     Args = Args0(),
-    case lists:member(RefacName, elementary_refacs()) andalso is_list(Args) of
+    case is_list(Args) of 
         true ->
-            Cmds=apply(wrangler_gen, RefacName, Args),
-            generate_cmds(Cmds);
+            try apply(wrangler_gen, RefacName, Args) of 
+                Cmds -> 
+                    ?wrangler_debug("Cmds:\n~p\n", [Cmds]),
+                    Cmds
+            catch
+                _E1:_E2 ->
+                    error(format_msg("Illegal command generator:\n~p\n", Cmd))  
+            end;
         false ->
             error(format_msg("Illegal command generator:\n~p\n", Cmd))  
     end; 
@@ -550,10 +556,7 @@ normalise(Entry) ->
 %%                                                                  %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%% The names of the elementary refactorings supported.
-elementary_refacs() ->
-    [rename_var, rename_fun, swap_args, fold_expr, gen_fun, move_fun, unfold_fun_app, tuple_args].
-                
+             
 format_msg(Format, Data) ->
     lists:flatten(io_lib:format(Format, [Data])).
 

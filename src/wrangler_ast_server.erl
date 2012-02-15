@@ -39,9 +39,10 @@
 %% API
 -export([parse_annotate_file/2, parse_annotate_file/3,
 	 parse_annotate_file/4, parse_annotate_file/5,
-	 quick_parse_annotate_file/3]).
+	 quick_parse_annotate_file/3, 
+         mfa_to_fun_def/2]).
 %% API
--export([start_ast_server/0, update_ast/2, get_temp_dir/0]).
+-export([start_ast_server/0, update_ast/2, add_range/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -49,7 +50,7 @@
 
 -include("../include/wrangler_internal.hrl").
 
--record(state, {dets_tab=none, asts=[]}).
+-record(state, {ets_tab=none}).
 
 %%====================================================================
 %% API
@@ -77,48 +78,32 @@ start_ast_server() ->
 %%-spec(init/1::([dir()]) ->{ok, #state{}}).
 init(_Args) ->
     process_flag(trap_exit, true),
-    case find_homedir() of
-	false -> {ok, #state{dets_tab=none}};
-	Dir ->
-	    DetsTab = filename:join(Dir, ".wrangler.dets"),
-	    file:delete(DetsTab),
-            case dets:open_file(DetsTab,  [{type, set}, {access, read_write}, {repair, false}]) of 
-                {ok, _Name} ->  {ok, #state{dets_tab=DetsTab}};
-                _  ->  {ok, #state{dets_tab=none}}
-            end
-    end.
+    EtsTab = ets:new(ast_tab, [set, protected,{read_concurrency, true}]),
+    {ok, #state{ets_tab=EtsTab}}.
 
-find_homedir() ->
-    case os:getenv("HOME") of
-        false ->
-            %% are we on Windows?
-            case {os:getenv("HOMEDRIVE"),os:getenv("HOMEPATH")} of
-                {false, _} -> false;
-                {Drive, false} -> Drive;
-                {Drive, Path} -> Drive ++ Path
-            end;
-        Path ->
-            Path
-    end.
 
 %%------------------------------------------------------------------
 %% -spec(get_ast/1::({filename(), boolean(), [dir()], integer(), atom()}) ->
 %% 	     {ok, {syntaxTree(), moduleInfo()}}).
-get_ast(Key={_FileName, _ByPassPreP, _SearchPaths, _TabWidth, _FileFormat}) ->
+get_ast(Key) ->
     gen_server:call(wrangler_ast_server, {get,Key}, 500000).
 
+-spec(mfa_to_fun_def(filename(), mfa()) -> syntaxTree()|none).
+mfa_to_fun_def(File, {M,F,A}) ->
+    Res=gen_server:call(wrangler_ast_server, {get_fun_def, {File, {M,F,A}}}, 500000),
+    element(2, Res).
 
 %%-type(modifyTime()::{{integer(), integer(), integer()},{integer(), integer(), integer()}}).
 %%-spec(update_ast/2::({filename(),boolean(), [dir()], integer(), atom()}, {syntaxTree(), moduleInfo(), modifyTime()}) -> ok).
-update_ast(Key={_FileName, _ByPassPreP, _SearchPaths, _TabWidth, _FileFormat}, {AnnAST, Info, CheckSum}) ->
-    gen_server:call(wrangler_ast_server, {update, {Key, {AnnAST, Info, CheckSum}}});
-update_ast(Key={FileName, ByPassPreP, SearchPaths, TabWidth, FileFormat}, SwpFileName) ->
-    {ok, {AnnAST, Info}} = parse_annotate_file(SwpFileName, ByPassPreP, SearchPaths, TabWidth, FileFormat),
+update_ast({_FileName, false, _, _, _}, _) -> ok;
+update_ast({FileName, true, _SearchPaths, _TabWidth, _FileFormat}, {AnnAST, Info, CheckSum, Ann}) ->
+    gen_server:call(wrangler_ast_server, {update, {FileName, {AnnAST, Info, CheckSum, Ann}}});
+update_ast({FileName, true, SearchPaths, TabWidth, FileFormat}, SwpFileName) ->
+    {ok, {AnnAST, Info}} = parse_annotate_file(SwpFileName, true, SearchPaths, TabWidth, FileFormat),
     CheckSum = wrangler_misc:filehash(FileName),
-    gen_server:call(wrangler_ast_server, {update, {Key, {AnnAST, Info, CheckSum}}}).
+    Ann = wrangler_syntax:get_ann(AnnAST),
+    gen_server:call(wrangler_ast_server, {update, {FileName, {ast_to_list(AnnAST), Info, CheckSum, Ann}}}).
  
-get_temp_dir() ->
-    gen_server:call(wrangler_ast_server, get_temp_dir).
 %%--------------------------------------------------------------------
 %% Function: %% handle_call(Request, From, State) -> {reply, Reply, State} |
 %%                                      {reply, Reply, State, Timeout} |
@@ -132,19 +117,23 @@ get_temp_dir() ->
 %%-spec(handle_call/3::({get,{filename(), boolean(), [dir()], integer(), atom()}}, any(), #state{}) -> 
 %%			   {reply, {ok, {syntaxTree(), moduleInfo()}}, #state{}}).
 handle_call({get, Key}, _From, State) ->
-    {Reply, State1} = get_ast(Key, State),
-    {reply, Reply, State1};
-handle_call(get_temp_dir, _From, State=#state{dets_tab=TabFile}) ->
-    TempDir = case TabFile of 
-		  none -> none;
-		  _ -> filename:dirname(TabFile)
-	      end,
-    {reply, TempDir, State};
-handle_call({update, {Key, {AnnAST, Info, Time}}}, _From, State) ->
-    State1=update_ast_1({Key, {AnnAST, Info, Time}}, State),
-    {reply, ok, State1}.
-
-
+    case get_ast(Key, State) of
+        {{ok, {ets, Tab, File}}, State1} ->
+            [{File, {AnnAST, Info, _Checksum, Ann}}]=ets:lookup(Tab, File),
+            {reply, {ok, {list_to_ast(AnnAST, Ann), Info}}, State1}
+    end;
+handle_call({update, {Key, {AnnAST, Info, CheckSum, Ann}}}, _From, State) ->
+    State1=update_ast_1({Key, {ast_to_list(AnnAST), Info, CheckSum, Ann}}, State),
+    {reply, ok, State1};
+handle_call({get_fun_def, {File, MFA}}, _From, State)->
+    {{ok, {ets, Tab, Key}}, State1} = get_ast({File, true, [], ?DEFAULT_TABWIDTH, 'unix'}, State), 
+    [{Key, {FormList, _Info, _Checksum, _Ann}}]=ets:lookup(Tab, Key),
+    case lists:keyfind(MFA, 1, FormList) of 
+        {MFA, Form} ->
+            {reply, {ok, binary_to_term(zlib:unzip(Form))}, State1};
+        false -> 
+            {reply, {ok, none}, State1}
+    end.
 
 %%--------------------------------------------------------------------
 %% Function: handle_cast(Msg, State) -> {noreply, State} |
@@ -174,15 +163,10 @@ handle_info(_Info, State) ->
 %% The return value is ignored.
 %%--------------------------------------------------------------------
 %%-spec(terminate/2::(any(), #state{}) -> ok).
-terminate(_Reason, _State=#state{dets_tab=TabFile}) ->
-    dets:close(TabFile),
-    _Res=file:delete(TabFile),
-    TempDir = filename:dirname(TabFile),
-    case file:list_dir(TempDir) of 
-     	{ok, []} ->
-     	    file:del_dir(TempDir);
-     	_ -> ok
-     end.
+terminate(_Reason, _State=#state{ets_tab=EtsTab}) ->
+    ets:delete(EtsTab),
+    ok.
+   
 
 %%--------------------------------------------------------------------
 %% Func: code_change(OldVsn, State, Extra) -> {ok, NewState}
@@ -203,61 +187,30 @@ get_ast({FileName, false, SearchPaths, TabWidth, FileFormat}, State) ->
     wrangler_error_logger:remove_from_logger(FileName),
     {ok, {AnnAST, Info}} = parse_annotate_file(FileName, false, SearchPaths, TabWidth, FileFormat),
     log_errors(FileName, Info),
-    {{ok, {AnnAST, Info}}, State};
-get_ast(Key = {FileName, ByPassPreP, SearchPaths, TabWidth, FileFormat}, State = #state{dets_tab = TabFile, asts = ASTs}) ->
-    case TabFile of
-	none ->
-            case lists:keysearch(Key, 1, ASTs) of
-		{value, {Key, {AnnAST, Info, Checksum}}} ->
-                    NewChecksum = wrangler_misc:filehash(FileName),
-		    case Checksum =:= NewChecksum andalso NewChecksum =/= 0 of
-			true ->
-                            log_errors(FileName, Info),
-                            {{ok, {AnnAST, Info}}, State};
-			false ->
-			    wrangler_error_logger:remove_from_logger(FileName),
-			    {ok, {AnnAST1, Info1}} = parse_annotate_file(FileName, ByPassPreP, SearchPaths, TabWidth, FileFormat),
-			    log_errors(FileName, Info1),
-			    {{ok, {AnnAST1, Info1}}, #state{asts = lists:keyreplace(Key, 1, ASTs, {Key, {AnnAST1, Info1, NewChecksum}})}}
-		    end;
-		false ->
-                    wrangler_error_logger:remove_from_logger(FileName),
-		    {ok, {AnnAST, Info}} = parse_annotate_file(FileName, ByPassPreP, SearchPaths, TabWidth, FileFormat),
-		    log_errors(FileName, Info),
-		    {{ok, {AnnAST, Info}}, #state{asts = [{Key, {AnnAST, Info, wrangler_misc:filehash(FileName)}}| ASTs]}}
-	    end;
-	_ ->
-	    NewChecksum = wrangler_misc:filehash(FileName),
-	    case dets:lookup(TabFile, Key) of
-		[{Key, {AnnAST, Info, Checksum}}] when Checksum =:= NewChecksum ->
-		    {{ok, {AnnAST, Info}}, State};
-		_ ->
-		    wrangler_error_logger:remove_from_logger(FileName),
-		    {ok, {AnnAST1, Info1}} = parse_annotate_file(FileName, ByPassPreP, SearchPaths, TabWidth, FileFormat),
-		    dets:insert(TabFile, {Key, {AnnAST1, Info1, NewChecksum}}),
-		    log_errors(FileName, Info1),
-		    {{ok, {AnnAST1, Info1}}, State}
-	    end
+    {{ok, {zlib:zip(term_to_binary(AnnAST)), Info}}, State};
+
+get_ast({FileName, ByPassPreP, SearchPaths, TabWidth, FileFormat}, State = #state{ets_tab=EtsTab}) ->
+    NewChecksum = wrangler_misc:filehash(FileName),
+    case ets:lookup(EtsTab, FileName) of
+        [{FileName, {_AnnAST, _Info, Checksum, _Ann}}] when Checksum =:= NewChecksum andalso
+                                                      NewChecksum =/= 0 ->
+            {{ok, {ets, EtsTab, FileName}}, State};
+        _ -> 
+            wrangler_error_logger:remove_from_logger(FileName),
+            {ok, {AnnAST0, Info1}} = parse_annotate_file(FileName, ByPassPreP, SearchPaths, TabWidth, FileFormat),
+            log_errors(FileName, Info1),
+            AnnAST1 =ast_to_list(AnnAST0),
+            Ann = wrangler_syntax:get_ann(AnnAST0),
+            true=ets:insert(EtsTab, {FileName, {AnnAST1, Info1, NewChecksum, Ann}}),
+            {{ok, {ets, EtsTab, FileName}}, State}
     end.
 
-update_ast_1({Key, {AnnAST, Info, _CheckSum}}, State = #state{dets_tab = TabFile, asts = ASTs}) ->
-    {FileName, _ByPassPreP, _SearchPaths, _TabWidth, _FileFormat} = Key,
+update_ast_1({FileName, {AnnAST, Info, _CheckSum, Ann}}, State = #state{ets_tab = EtsTab}) ->
     Checksum = wrangler_misc:filehash(FileName),
-    case TabFile of
-	none -> 
-            Res = lists:keysearch(Key, 1, ASTs),
-            case Res of
-                {value, {Key, _}} ->
-                    State#state{asts = lists:keyreplace(Key, 1, ASTs, {Key, {AnnAST, Info, Checksum}})};
-                false ->
-                    State#state{asts = [{Key, {AnnAST, Info, Checksum}}| ASTs]}
-            end;                    
-	_ ->
-	    dets:delete(TabFile, Key),
-	    dets:insert(TabFile, [{Key, {AnnAST, Info, Checksum}}]),
-            State
-    end.
-    
+    ets:delete(EtsTab, FileName),
+    ets:insert(EtsTab, [{FileName, {AnnAST, Info, Checksum, Ann}}]),
+    State.
+     
 log_errors(FileName, Info) ->
     case lists:keysearch(errors, 1, Info) of
       {value, {errors, Error}} ->
@@ -265,6 +218,28 @@ log_errors(FileName, Info) ->
       false -> ok
     end.
 
+ast_to_list(AnnAST) ->
+    Forms = wrangler_syntax:form_list_elements(AnnAST),
+    Len = length(Forms),
+    [case wrangler_syntax:type(Form) of 
+         function -> 
+             {api_refac:fun_define_info(Form), 
+              zlib:zip(term_to_binary(Form))};
+         _ -> 
+           {SeqNo,zlib:zip(term_to_binary(Form))}
+           end
+     ||{SeqNo, Form}<-lists:zip(lists:seq(1,Len), Forms)].
+
+list_to_ast(FormsWithKey, Ann) ->
+    wrangler_syntax:set_pos(
+      wrangler_syntax:set_ann(
+        wrangler_syntax:form_list(
+          [binary_to_term(zlib:unzip(Form))||
+              Form<-element(2, lists:unzip(FormsWithKey))]), Ann),{1,1}).
+    
+
+
+    
 
 %% =====================================================================
 %% @doc Parse an Erlang file, and annotate the abstract syntax tree with static semantic 
@@ -327,7 +302,7 @@ parse_annotate_file(FName, ByPassPreP, SearchPaths, TabWidth) ->
 	    ?wrangler_io("wrangler_ast_server is not defined\n", []),
 	    parse_annotate_file(FName, ByPassPreP, SearchPaths, TabWidth, FileFormat);
 	_ ->
-            get_ast({FName, ByPassPreP, SearchPaths, TabWidth, FileFormat})
+            get_ast({FName, ByPassPreP,SearchPaths, TabWidth, FileFormat})
     end.
 
 -spec(parse_annotate_file(FName::filename(), ByPassPreP::boolean(), SearchPaths::[dir()], integer(), atom())
@@ -925,6 +900,7 @@ add_range_to_list_node(Node, Toks, Es, Str1, Str2, KeyWord1, KeyWord2) ->
     La = wrangler_misc:glast(Str2, Es),
     calc_and_add_range_to_node_1(Node, Toks, Hd, La, KeyWord1, KeyWord2).
 
+add_range_to_body(Node, [], _, _) -> Node; %% why this should happend?
 add_range_to_body(Node, B, Str1, Str2) ->
     H = wrangler_misc:ghead(Str1, B),
     La = wrangler_misc:glast(Str2, B),

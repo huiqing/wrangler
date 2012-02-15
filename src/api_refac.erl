@@ -191,7 +191,7 @@
 %%                     NewArgs@@@=delete(N, Args@@@),
 %%                     ?TO_AST("F@(NewArgs@@@)")
 %%                   end,
-%%                   refac_api:fun_define_info(F@) == {M, F, A}).
+%%                   api_refac:fun_define_info(F@) == {M, F, A}).
 %%
 %%        delete(N, List) ->
 %%            lists:sublist(List, N-1)++ lists:nthtail(N, List). '''
@@ -222,8 +222,8 @@
 %% `_This@', whose value if the entire subtree that pattern matches the template.
 %%
 %%         ```?COLLECT(?T("Body@@, V@=Expr@, V@"),
-%%                     {_File@, refac_api:start_end_loc(_This@)},
-%%                     refac_api:type(V@)==variable)'''
+%%                     {_File@, api_refac:start_end_loc(_This@)},
+%%                     api_refac:type(V@)==variable)'''
 %%
 %%</li>
 %%<li>
@@ -234,7 +234,7 @@
 %% same the example above.
 %% 
 %%         ```?COLLEC_LOC(?T("Body@@, V@=Expr@, V@"),
-%%                        refac_api:type(V@)==variable)'''
+%%                        api_refac:type(V@)==variable)'''
 %%
 %%</li>
 %%<li>
@@ -355,10 +355,12 @@
          mfa_to_fun_def/2,
          insert_an_attr/2,
          remove_from_import/2,
+         add_to_export/2,
          add_to_export_after/3,
          pp/1,
          equal/2,
          quote/1,
+         anti_quote/1,
          get_app_mod/1,
          get_app_fun/1,
          get_app_args/1,
@@ -370,10 +372,11 @@
          collect/3,
          match/2,
          match/3,
+         extended_expr_match/3,
          search_and_transform/3,
          search_and_collect/3,
          meta_apply_templates/1]).
-
+         
 -compile(export_all).
 
 -include("../include/wrangler.hrl").
@@ -513,7 +516,7 @@ syntax_context(Node) ->
             %% Should change to return an error message here!!!
             %% refac_io:format("Node:\n~p\n", [Node]),
             %% throw({error, "Wrangler internal error "
-            %%        "in refac_api:syntax_context/1"})
+            %%        "in api_refac:syntax_context/1"})
     end.
    
 %% ================================================================================
@@ -798,37 +801,9 @@ fun_define_info(Node) ->
 %% =====================================================================
 %% @doc Returns the function form that defines `MFA'; none is returns if no 
 %% such function definition found.
-%% @spec mfa_to_fun_def(mfa(), filename()|syntaxTree) ->syntaxTree()|none
--spec (mfa_to_fun_def(mfa(), filename()|syntaxTree()) ->syntaxTree()|none).
-mfa_to_fun_def(MFA,FileOrTree) ->
-    case filelib:is_regular(FileOrTree) of 
-        true ->
-            {ok, {AnnAST, _}}= wrangler_ast_server:parse_annotate_file(FileOrTree, true),  
-            mfa_to_fundef_1(AnnAST,MFA);
-        false ->
-            mfa_to_fundef_1(FileOrTree, MFA)
-    end.
-   
-mfa_to_fundef_1(AnnAST, {M,F,A}) ->
-    case is_tree(AnnAST) of 
-        true ->
-            Forms=wrangler_syntax:form_list_elements(AnnAST),
-            Fun = fun(Form) ->
-                          Ann= wrangler_syntax:get_ann(Form),
-                          case lists:keysearch(fun_def, 1, Ann) of
-                              {value, {fun_def, {M, F, A, _, _}}} ->
-                                  false;
-                              _ -> true
-                  end
-                  end,
-            case lists:dropwhile(Fun, Forms) of
-                [Form|_] ->
-            Form;
-                _ -> 
-                    none
-            end;
-        _ -> none
-    end.
+-spec mfa_to_fun_def(filename(), mfa()) ->  syntaxTree()  | none.
+mfa_to_fun_def(File,MFA) ->
+    wrangler_ast_server:mfa_to_fun_def(File, MFA).
   
 %%=====================================================================
 %%@doc Returns the name of the module defined in `File', 
@@ -894,6 +869,9 @@ remove_from_import(Node, _FA={F,A}) ->
     end.
 
 %% =======================================================================
+add_to_export(Node, FAtoAdd) ->
+    add_to_export_after(Node, FAtoAdd, none).
+
 %%@doc Adds an entity `FAtoAdd' to the export list of an export attribute
 %%     right after another entity `FA'; if `FA' is `none' then append 
 %%     the new entity to the end of the export list.
@@ -909,14 +887,16 @@ add_to_export_after(Node, FAtoAdd, FA) ->
                                                  wrangler_syntax:integer(A)),
             NewL=case FA of
                      none ->
-                         lists:reverse([AQ|L]);
+                         L0 = wrangler_syntax:list_elements(L),
+                         L1 = L0++[AQ],
+                         wrangler_misc:rewrite(L, wrangler_syntax:list(L1));
                      {F1,A1} ->
                          L0 = wrangler_syntax:list_elements(L),
                          L1 = lists:append([begin
                                                 FunName = wrangler_syntax:atom_value(
-                                                               wrangler_syntax:arity_qualifier_body(E)),
+                                                            wrangler_syntax:arity_qualifier_body(E)),
                                                 Arity = wrangler_syntax:integer_value(
-                                                             wrangler_syntax:arity_qualifier_argument(E)),
+                                                          wrangler_syntax:arity_qualifier_argument(E)),
                                                 case {FunName, Arity} of
                                                     {F1,A1} ->
                                                         [E, AQ];
@@ -972,8 +952,10 @@ do_mask_variables(Node) ->
 pp(Expr) when is_list(Expr) ->
     pp_1(Expr);
 pp(Expr) ->
-    wrangler_prettypr:format(Expr).
+    wrangler_prettypr:format(wrangler_syntax:remove_comments(Expr)).
 
+pp_1([])->
+    "";
 pp_1([E]) ->
     wrangler_prettypr:format(E);
 pp_1([E|Es]) ->
@@ -983,6 +965,8 @@ pp_1([E|Es]) ->
 quote(Str) ->    
     wrangler_misc:parse_annotate_expr(Str).
 
+anti_quote(Str) ->    
+    wrangler_misc:parse_annotate_expr(Str).
 
 %%=================================================================
 %%@private
@@ -993,7 +977,7 @@ subst(Expr, Subst) ->
     {Expr1, _} =api_ast_traverse:stop_tdTP(fun do_subst/2, Expr, Subst),
     Expr2=expand_meta_list(Expr1),
     remove_fake_begin_end(Expr2).
- 
+   
 do_subst(Node, Subst) ->
     case wrangler_syntax:type(Node) of
 	variable ->
@@ -1060,34 +1044,29 @@ reset_pos_and_range(Node) ->
             Node
     end.
 
-copy_pos_and_range(Node1, Node2) ->
+copy_pos_and_attrs(Node1, Node2) ->
     Ann=wrangler_syntax:get_ann(Node1),
     Range = case lists:keyfind(range,1,Ann) of
                 {range, R} ->
                     R;
                 false->
-                    {0,0}
+                    {{0,0},{0,0}}
             end,
-    wrangler_syntax:copy_pos(
-         Node1,wrangler_misc:update_ann(Node2, {range, Range})).
+    wrangler_syntax:copy_comments(Node1, 
+      wrangler_syntax:copy_pos(
+        Node1,wrangler_misc:update_ann(Node2, {range, Range}))).
 
 %%=================================================================
 %%-spec(reverse_function_clause(Tree::syntaxTree()) -> syntaxTree()).   
 %%@private            
-reverse_function_clause(Tree) ->
-    {Tree1, _} = api_ast_traverse:stop_tdTP(
-                   fun reverse_function_clause_1/2, Tree, {}),
-    Tree1.
-
-reverse_function_clause_1(Node, _OtherInfo) ->
+reverse_function_clause(Node) ->
     case wrangler_syntax:type(Node) of
         function ->
-            Node1=reverse_function_clause_2(Node),
-            {Node1, true};
+            reverse_function_clause_1(Node);
         _ ->
-            {Node, false}
+            Node
     end.
-reverse_function_clause_2(FunDef) ->
+reverse_function_clause_1(FunDef) ->
     FunName = wrangler_syntax:function_name(FunDef),
     Cs = wrangler_syntax:function_clauses(FunDef),
     case [C||C <- Cs, wrangler_syntax:type(C) == function_clause] of
@@ -1116,8 +1095,8 @@ reverse_function_clause_2(FunDef) ->
 %%======================================================================
 -type (rule()::{rule, any(), any()}).
 -spec(search_and_transform([rule()], [filename()|dir()]|
-                           [{filename(), syntaxTree()}|syntaxTree()],
-                           full_td_tp|stop_td_tp) ->
+                           [{filename(), syntaxTree()}|syntaxTree()]|syntaxTree(),
+                           full_td_tp|full_bu_tp|stop_td_tp) ->
              {ok, [{{filename(),filename()}, syntaxTree()}]}|
              {ok, [{filename(), syntaxTree()}|syntaxTree()]}|
              {ok, syntaxTree()}).
@@ -1133,8 +1112,9 @@ search_and_transform(Rules,Input,TraverseStrategy)
         false ->
             case lists:all(fun(I) ->
                                    case I of 
-                                       {File, Tree} ->
-                                           filelib:is_file(File) andalso is_tree(Tree);
+                                       {_File, Tree} ->
+                                           %% filelib:is_file(File) andalso is_tree(Tree);
+                                           is_tree(Tree);
                                        _ ->
                                            is_tree(I)
                                    end
@@ -1177,7 +1157,7 @@ search_and_transform_2(Rules, FileOrDirs, Fun) ->
                catch
                    _E1:_E2 ->
                        {false,[]}
-               end,
+              end,
     Files = wrangler_misc:expand_files(FileOrDirs, ".erl"),
     Res=lists:append([begin
                           search_and_transform_3(Rules, File, Fun, Selective)
@@ -1187,14 +1167,17 @@ search_and_transform_2(Rules, FileOrDirs, Fun) ->
 search_and_transform_3(Rules, File, Fun, Selective) ->
     ?wrangler_io("The current file under refactoring is:\n~p\n", [File]),
     {ok, {AST, _}} = wrangler_ast_server:parse_annotate_file(File, true, [], 8),
-    AST0 = wrangler_misc:extend_function_clause(AST),
-    {AST1, Changed}=search_and_transform_4(File, Rules, AST0, Fun, Selective),
+    Res=[search_and_transform_4(File, Rules, wrangler_misc:extend_function_clause(Form),
+                                Fun, Selective)
+         || Form<-wrangler_syntax:form_list_elements(AST)],
+    {Forms, Changes} = lists:unzip(Res),
+    Changed = lists:member(true, Changes),
     if Changed andalso Selective/=true ->
-            AST2= reverse_function_clause(AST1),
-            [{{File, File}, AST2}];
+            AST1 = wrangler_syntax:form_list([reverse_function_clause(F)||F<-Forms]),
+            [{{File, File}, AST1}];
        true ->
             if Changed->
-                    [{{File, File}, AST1}];
+                    [{{File, File}, wrangler_syntax:form_list(Forms)}];
                true ->
                     []
             end
@@ -1202,8 +1185,7 @@ search_and_transform_3(Rules, File, Fun, Selective) ->
  
 search_and_transform_4(File,Rules,Tree,Fun,Selective) ->
     F = fun(Node, CandsNotToChange) ->
-                Res = try_expr_match(Rules, Node),
-                case Res of
+                case  try_expr_match(Rules, {File, Node}) of
                     {true, NewExprAfter} ->
                         case Selective of
                             true ->
@@ -1219,7 +1201,7 @@ search_and_transform_4(File,Rules,Tree,Fun,Selective) ->
                                 {NewExprAfter, true};
                             {false, CandsNotToChange} ->
                                 {{SLn, SCol}, {ELn, ECol}}=start_end_loc(Node),
-                                MD5 =erlang:md5(wrangler_prettypr:format(Node)),
+                                MD5 =binary_to_list(erlang:md5(wrangler_prettypr:format(Node))),
                                 Key ={File, SLn, SCol, ELn, ECol, MD5},
                                 case lists:keysearch(Key,1,CandsNotToChange) of
                                     false ->
@@ -1240,6 +1222,8 @@ search_and_transform_4(File,Rules,Tree,Fun,Selective) ->
     case Fun of
         full_td_tp ->
             extended_full_tdTP(F, Tree, CandsNotToChange);
+        full_bu_tp ->
+            extended_full_buTP(F, Tree, CandsNotToChange);
         stop_td_tp  ->
             extended_stop_tdTP(F, Tree, CandsNotToChange)
     end.
@@ -1248,7 +1232,9 @@ search_and_transform_4(File,Rules,Tree,Fun,Selective) ->
 %% pre_order
 extended_full_tdTP(Fun, Node, Others) ->
     {Node1, C} =extended_full_tdTP_1(Fun, Node, Others),
-    {remove_fake_begin_end(Node1),C}.
+    if C -> {remove_fake_begin_end(Node1),C};
+       true -> {Node1, C}
+    end.
         
 extended_full_tdTP_1(Fun, Node, Others) ->
     {Node1, Changed} =Fun(Node, Others),
@@ -1272,11 +1258,12 @@ extended_full_tdTP_1(Fun, Node, Others) ->
              lists:member(true, lists:flatten(G))}
     end.
    
-
 %% pre_order.
 extended_stop_tdTP(Fun, Node, Others) ->
     {Node1, C} =extend_stop_tdTP(Fun, Node, Others),
-    {remove_fake_begin_end(Node1),C}.
+    if C ->{remove_fake_begin_end(Node1),C};
+       true ->{Node1, C}
+    end.
 
 extend_stop_tdTP(Fun, Node, Others) ->
     Res= Fun(Node, Others), 
@@ -1301,7 +1288,44 @@ extend_stop_tdTP(Fun, Node, Others) ->
                     {wrangler_misc:rewrite(Node, Node2), lists:member(true, lists:flatten(G))}
             end
     end. 
- 
+
+-spec(extended_full_buTP/3::(fun((syntaxTree(), any()) -> syntaxTree()), syntaxTree(), anyterm())->
+	             {syntaxTree(), boolean()}).
+extended_full_buTP(Fun, Node, Others) ->
+    {Node1, C} =extended_full_buTP_1(Fun, Node, Others),
+    if C -> {api_refac:remove_fake_begin_end(Node1),C};
+       true -> {Node1, C}
+    end.
+
+extended_full_buTP_1(Fun, Tree, Others) ->
+    case wrangler_syntax:subtrees(Tree) of
+        [] -> {Tree1, Changed} =Fun(Tree, Others),
+              extended_rewrite(Tree, Tree1, Changed);
+        Gs ->
+            Gs1 = [[extended_full_buTP_1(Fun, T, Others) || T <- G] || G <- Gs],
+            Gs2 = [[N || {N, _B} <- G] || G <- Gs1],
+            G = [[B || {_N, B} <- G] || G <- Gs1],
+            Tree1 = wrangler_syntax:make_tree(wrangler_syntax:type(Tree), Gs2),
+            {Tree2, C} =Fun(wrangler_misc:rewrite(Tree, Tree1), Others),
+            Changed = C orelse lists:member(true, lists:flatten(G)),
+            extended_rewrite(Tree, Tree2, Changed)
+    end.
+
+extended_rewrite(OldTree, NewTree, Changed) ->
+    if is_list(NewTree) ->
+            case NewTree of
+                [T] -> {T, true};
+                _ ->
+                    {wrangler_misc:rewrite(
+                       OldTree, make_fake_block_expr(NewTree)), true}
+            end;
+       Changed ->
+            {wrangler_misc:rewrite(OldTree, NewTree), Changed};
+       true ->
+            {OldTree, false}
+    end.
+
+
 remove_fake_begin_end(Node) ->
     case wrangler_syntax:subtrees(Node) of
         [] -> Node;
@@ -1346,8 +1370,12 @@ make_fake_block_expr(Es) ->
 match(Temp, Node) -> 
     Node1=wrangler_misc:extend_function_clause(Node),
     wrangler_generalised_unification:expr_match(
-      Temp, Node1).
-     
+          Temp, Node1).
+        
+%%@private
+extended_expr_match(Temp, Node, Cond) ->
+    wrangler_generalised_unification:extended_expr_match(Temp, Node, Cond).
+
 %%@private
 match({meta_apply, TCs}, Node, Cond) ->
     %% wrangler_io:format("Temp:\n~p\n", [TCs]),
@@ -1377,19 +1405,20 @@ match_meta_apply_temp(MetaApplyTemp, Node, Cond) ->
     end.
 
 
-try_expr_match([], _Node) ->false;
-try_expr_match([{rule,Fun,BeforeExpr}|T], Node) 
+try_expr_match([], {_File, _Node}) ->false;
+try_expr_match([{rule,Fun,BeforeExpr}|T], {File, Node}) 
   when is_list(BeforeExpr) andalso is_list(Node) ->
-    try_expr_match_2([{rule,Fun, BeforeExpr}|T], Node,1);
+      try_expr_match_2([{rule,Fun, BeforeExpr}|T], {File, Node},1);
     
-try_expr_match([{rule,Fun, BeforeExpr}|T], Node) when 
+try_expr_match([{rule,Fun, BeforeExpr}|T], {File,Node}) when 
       not is_list(BeforeExpr) andalso not is_list(Node)->
-    try_expr_match_1([{rule,Fun, BeforeExpr}|T], Node);
-try_expr_match([_|T], Node) ->
-    try_expr_match(T, Node).
+    try_expr_match_1([{rule,Fun, BeforeExpr}|T], {File, Node});
+try_expr_match([_|T], {File, Node}) ->
+    try_expr_match(T, {File, Node}).
 
-try_expr_match_1([{rule,Fun, _BeforeExpr}|T], Node) ->
-    case Fun(Node) of 
+try_expr_match_1([{rule,Fun, _BeforeExpr}|T], {File,Node}) ->
+    Res = Fun(File, Node),
+    case Res of 
         {NewExpr, true} ->
             case is_list(NewExpr) of
                 true ->
@@ -1397,44 +1426,62 @@ try_expr_match_1([{rule,Fun, _BeforeExpr}|T], Node) ->
                 false ->
                     case is_tree(NewExpr) of 
                         true ->
-                            {true, copy_pos_and_range(Node, NewExpr)};
+                            {Start1, _} = start_end_loc(Node),
+                            {Start2, _} = start_end_loc(NewExpr),
+                            if Start1/=Start2 ->
+                                    {true, copy_pos_and_attrs(Node, NewExpr)};                                    
+                               true ->
+                                    {true,wrangler_syntax:copy_comments(Node,NewExpr)}
+                            end;
                         false ->
                             {true, NewExpr}
                     end
             end;
         {_, false} ->
-            try_expr_match(T, Node)
+            try_expr_match(T, {File, Node})
     end.
 
-try_expr_match_2([{rule, Fun, BeforeExpr}|T], NodeList, Index) ->
+try_expr_match_2([{rule, Fun, BeforeExpr}|T], {File, NodeList}, Index) ->
     Len1 = length(BeforeExpr),
     Len2 = length(NodeList),
-    case Len1 =< Len2 of
+    HasMetaList = has_meta_list(BeforeExpr),
+    case Len1 =< Len2 orelse HasMetaList of
         true ->
-            Exprs = lists:sublist(NodeList, Index, Len1),
-            case Fun(Exprs) of 
+            Exprs =if HasMetaList ->
+                           NodeList;
+                      true ->
+                           lists:sublist(NodeList, Index, Len1)
+                   end,
+            case Fun(File, Exprs) of 
                 {NewExpr, true} ->
                     NewExpr1 = case NewExpr of
                                    [E|Es]->
-                                       [copy_pos_and_range(hd(Exprs), E)|Es];
+                                       [copy_pos_and_attrs(hd(Exprs), E)|Es];
                                    _ ->
-                                       [copy_pos_and_range(hd(Exprs),NewExpr)]
+                                       [copy_pos_and_attrs(hd(Exprs),NewExpr)]
                                end,
-                    NewNodeList =  lists:sublist(NodeList, Index-1) ++
-                        NewExpr1 ++  lists:nthtail(Index+Len1-1, NodeList),
-                    {true, NewNodeList};
-                {_, false} ->
-                    if Index < Len2 ->
-                            try_expr_match_2([{rule,Fun, BeforeExpr}|T], NodeList, Index+1);
+                    if HasMetaList ->
+                            {true, NewExpr};
                        true ->
-                            try_expr_match(T, NodeList)
+                            NewNodeList=lists:sublist(NodeList, Index-1) 
+                                ++ NewExpr1 ++  
+                                lists:nthtail(Index+Len1-1, NodeList),
+                            {true, NewNodeList}
+                    end;
+                {_, false} ->
+                    if Index < Len2 andalso not HasMetaList->
+                            try_expr_match_2([{rule,Fun, BeforeExpr}|T], {File, NodeList}, Index+1);
+                       true ->
+                            try_expr_match(T, {File, NodeList})
                     end
             end;
         false->
-            try_expr_match(T, NodeList)
+            try_expr_match(T, {File, NodeList})
     end.
             
 
+has_meta_list(NodeList) ->
+    [E ||E<-NodeList, is_meta_list_var(E)]/=[].
 
 is_meta_list_var(Var) ->
     case wrangler_syntax:type(Var) of
@@ -1566,8 +1613,9 @@ search_and_collect(Collectors, Input, TraverseStrategy)
         false ->
             case lists:all(fun(I) ->
                                    case I of 
-                                       {File, Tree} ->
-                                           filelib:is_file(File) andalso is_tree(Tree);
+                                       {_File, Tree} ->
+                                           %%filelib:is_file(File) andalso is_tree(Tree);
+                                           is_tree(Tree); %% allow File to be data other than file?
                                        _ ->
                                            is_tree(I)
                                    end
@@ -1986,7 +2034,7 @@ make_arity_qualifier(FunName, Arity) when
     wrangler_syntax:arity_qualifier(wrangler_syntax:atom(FunName),
                                      wrangler_syntax:integer(Arity));
 make_arity_qualifier(_FunName, _Arity) ->
-    erlang:error("badarg to function refac_api:make_arity_qualifier/2.").
+    erlang:error("badarg to function api_refac:make_arity_qualifier/2.").
 
    
 check_rules(Rules) when is_list(Rules)->
@@ -2045,7 +2093,7 @@ start_end_loc(Tree) ->
                   fun_name ::syntaxTree(),
                   args     ::[syntaxTree()]|syntaxTree()}).
 
-%% @doc For a function application node that matches `?FUN_APPY(M,F,A)', 
+%% @doc For a function application node that matches `?FUN_APPLY(M,F,A)', 
 %%     get the part that represents the module name if M appears in 
 %%     the application; otherwise returns `none'.
 -spec get_app_mod(syntaxTree()) ->syntaxTree()|none.
@@ -2395,4 +2443,4 @@ get_mfas(File, Order) ->
                 false ->
                     []
             end
-    end.
+    end. 
