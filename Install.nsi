@@ -157,9 +157,9 @@ StrCpy $varWranglerSrcFiles2 ".\src\wrangler_error_logger.erl \
                              .\src\wrangler_recomment.erl \
                              .\src\wrangler_refacs.erl \
                              .\src\wrangler_scan_with_layout.erl \
-							 .\src\distel_ie.erl \
-							 .\src\fdoc.erl \
-							 .\src\otp_doc.erl"
+		              .\src\distel_ie.erl \
+			 .\src\fdoc.erl \
+			 .\src\otp_doc.erl"
 StrCpy $varWranglerSrcFiles3  ".\src\wrangler_side_effect.erl \
                              .\src\wrangler_slice.erl \
                              .\src\wrangler_suffix_tree.erl \
@@ -168,17 +168,17 @@ StrCpy $varWranglerSrcFiles3  ".\src\wrangler_side_effect.erl \
                              .\src\wrangler_undo_server.erl \
                              .\src\wrangler_unification.erl \
                              .\src\wrangler_write_file.erl \
-						     .\src\refac_duplicated_code.erl \
+		             .\src\refac_duplicated_code.erl \
                              .\src\refac_expr_search.erl \
                              .\src\refac_fold_against_macro.erl \
-							 .\src\refac_fold_expression.erl \
+			     .\src\refac_fold_expression.erl \
                              .\src\refac_fun_to_process.erl \ 
-							 .\src\api_interface.erl \
-							 .\src\api_spec.erl \
-							 .\src\wrangler_cmd_server.erl \
-							 .\src\wrangler_backup_server.erl \
-							 .\src\wrangler_add_new_refac.erl \
-							 .\src\refac_bug_cond.erl \
+			     .\src\api_interface.erl \
+			     .\src\api_spec.erl \
+			     .\src\wrangler_cmd_server.erl \
+			     .\src\wrangler_backup_server.erl \
+			     .\src\wrangler_add_new_refac.erl \
+			     .\src\refac_bug_cond.erl \
                              .\src\refac_regexp_to_re"
     
   Push %WRANGLER_DIR%                        #text to be replaced

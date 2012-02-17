@@ -1,7 +1,7 @@
 
                     Wrangler, the Erlang Refactorer
                 a snapshot of our current prototype
-                            01/11/2011
+                            17/02/2012
               http://www.cs.kent.ac.uk/projects/wrangler/
 
 --------------------------------------------------------------------------------

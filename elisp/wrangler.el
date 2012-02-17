@@ -271,19 +271,6 @@
 (add-hook 'ediff-quit-hook 'my-ediff-qh)
 
 
-(defvar gen-refac-menu-items
-  `(("Batch Clone Elimination" refac_batch_clone_removal)))
-
-(defvar gen-composite-refac-menu-items
-  `(("Batch Clone Elimination" refac_batch_clone_removal)))
-
-(defvar my-gen-refac-menu-items
-   `(("Batch Clone Elimination" refac_batch_clone_removal)))
-
-(defvar my-gen-composite-refac-menu-items
-  `(("Batch Clone Elimination" refac_batch_clone_removal)))
-
-
 (defvar refactor-menu-items
   `(("Rename Variable Name" erl-refactor-rename-var)
     ("Rename Function Name" erl-refactor-rename-fun)
@@ -4186,7 +4173,8 @@ Please see the function `tempo-define-template'.")
 
 (defvar gen_composite_refac_menu_items
 `(("Batch Inline Vars" refac_batch_inline_vars)
-("Batch Clone Elimination" refac_batch_clone_elimination)
+ ("Batch Clone Elimination" refac_batch_clone_elimination)
+ ("Batch Prefix Module" refac_batch_prefix_module)
 ))
 
 (defvar gen_refac_menu_items
@@ -4210,6 +4198,9 @@ Please see the function `tempo-define-template'.")
   (interactive)
   (apply-composite-refac 'refac_batch_clone_elimination))
 
+(defun refac_batch_prefix_module()
+  (interactive)
+  (apply-composite-refac 'refac_batch_prefix_module))
 
 (defun refac_swap_function_arguments()
   (interactive)
