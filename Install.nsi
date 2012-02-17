@@ -177,7 +177,9 @@ StrCpy $varWranglerSrcFiles3  ".\src\wrangler_side_effect.erl \
 							 .\src\api_spec.erl \
 							 .\src\wrangler_cmd_server.erl \
 							 .\src\wrangler_backup_server.erl \
-							 .\src\wrangler_add_new_refac.erl"
+							 .\src\wrangler_add_new_refac.erl \
+							 .\src\refac_bug_cond.erl \
+                             .\src\refac_regexp_to_re"
     
   Push %WRANGLER_DIR%                        #text to be replaced
   Push $varWranglerDir                       #replace with
@@ -239,6 +241,18 @@ Function CheckErlang
 
   ClearErrors
      
+  ReadRegStr $R0 HKLM "SOFTWARE\Ericsson\Erlang\5.9" ""
+  StrCpy $varErlangDir $R0
+  StrCpy $R1 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles"
+  StrCpy $R2 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles0"
+  StrCpy $R3 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles1"
+  StrCpy $R4 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles2"
+  StrCpy $R5 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles3"
+  StrCpy $R6 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varGenRefacSrcFiles"
+  StrCpy $R7 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varGenCompRefacSrcFiles"
+  StrCpy $varErlangEmacsDir "$R0\lib\tools-2.6.6.6\emacs"
+  IfErrors 0 ErlangFound
+  
   ReadRegStr $R0 HKLM "SOFTWARE\Ericsson\Erlang\5.8.5" ""
   StrCpy $varErlangDir $R0
   StrCpy $R1 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles"
