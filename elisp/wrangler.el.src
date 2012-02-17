@@ -83,6 +83,10 @@
 (setq refactor-mode nil)
 (setq has-warning 'false)
 (setq refac-result nil)
+(setq my_gen_refac_menu_items nil)
+(setq my_gen_composite_refac_menu_items nil)
+(setq wrangler_ext (expand-file-name (concat (getenv "HOME") "/.wrangler/elisp/wrangler_ext.el")))
+
 
 (defun wrangler-ediff(file1 file2)
   "run ediff on file1 ans file2"
@@ -304,6 +308,7 @@
       ("eqc_statem State Data to Record" erl-refactor-eqc-statem-to-record)
       ("eqc_fsm State Data to Record" erl-refactor-eqc-fsm-to-record)
       ("Test Cases to Property"  erl-refactor-test-cases-to-property)
+      ("Refactor Bug PreCond"  erl-refactor-bug-precond)
       ))
     nil
     ("Process Refactorings (Beta)"
@@ -319,13 +324,21 @@
     nil
     ("gen_refac Refacs"  (gen_refac_menu_items))
     ("gen_composite_refac Refacs" (gen_composite_refac_menu_items))
+    nil
     ("My gen_refac Refacs" (my_gen_refac_menu_items))
     ("My gen_composite_refac Refacs" (my_gen_composite_refac_menu_items))
+    nil
     ("Apply Adhoc Refactoring"  apply-adhoc-refac)    
     ("Apply Composite Refactoring" apply-composite-refac)
-    ("Add To My gen_refac Refacs" add_to_my_gen_refac_menu_items)
-    ("Add To My gen_composite_refac Refacs" add_to_my_gen_composite_refac_menu_items)
-    ))
+    nil
+    ("Add/Remove Menu Items"
+     (           
+       ("Add To My gen_refac Refacs" add_to_my_gen_refac_menu_items)
+       ("Add To My gen_composite_refac Refacs" add_to_my_gen_composite_refac_menu_items)
+       nil
+        ("Remove from My gen_refac Refacs" remove_from_my_gen_refac_menu_items)
+        ("Remove from My gen_composite_refac Refacs" remove_from_my_gen_composite_refac_menu_items)
+    ))))
  
 (defvar inspector-menu-items
   '(("Instances of a Variable" erl-wrangler-code-inspector-var-instances) 
@@ -361,16 +374,18 @@
       ;;  ("Detect Similar Code in Current Buffer (Old)" erl-refactor-sim-code-detection-in-buffer)
       ;;  ("Detect Similar Code in Dirs (Old)" erl-refactor-sim-code-detection-in-dirs)
       ))
-    ;;nil
-    ;;("Identical Code Detection"
-    ;; (("Detect Identical Code in Current Buffer"  erl-refactor-duplicated-code-in-buffer)
-    ;;  ("Detect Identical Code in Dirs" erl-refactor-duplicated-code-in-dirs)
-    ;;  ("Identical Expression Search in Current Buffer" erl-refactor-expression-search)
-    ;;  ("Identical Expression Search in Dirs" erl-refactor-expression-search-in-dirs)
-    ;;  ))
+    nil
+    ("API Migration"
+     (("Generate API Migration Rules"  erl-refactor-generate-migration-rules)
+      ("Apply API Migration to Current File" erl-refactor-apply-api-migration-file)
+      ("Apply API Migration to Dirs" erl-refactor-apply-api-migration-dirs)
+      nil
+      ("From Regexp to Re"  erl-refactor-regexp-to-re) 
+      ))
     nil
     ("Skeletons"
      (("gen_refac Skeleton"  tempo-template-gen-refac)
+      ("gen_composite_refac Skeleton" tempo-template-gen-composite-refac)
       ))
     nil
     ("Customize Wrangler" wrangler-customize)
@@ -462,12 +477,13 @@
   (sleep-for 1.0)
   (save-window-excursion
     (wrangler-erlang-shell))
-  (sleep-for 2.0)
+  (sleep-for 1.0)
   (erl-spawn
     (erl-send-rpc wrangler-erl-node 'code 'ensure_loaded (list 'distel))
     (erl-receive()
         ((['rex res]
           t))))
+  (sleep-for 1.0)
   (start-wrangler-app))
   
 
@@ -497,7 +513,7 @@
   (interactive)
   (require 'comint)
   (setq opts (list "-name" wrangler-erl-node-string
-	        "-pa" (concat %WRANGLER_DIR% "/ebin")
+                   "-pa" (expand-file-name (concat (getenv "HOME") "/.wrangler/ebin"))
 		   "-setcookie" (erl-cookie)
                    "+R" "9"
 		   "-newshell" "-env" "TERM" "vt100"))
@@ -541,6 +557,10 @@
   (define-key erlang-mode-map "\C-c\C-wcd"  'erl-refactor-inc-sim-code-detection-in-dirs)
   (erlang-menu-install "Wrangler" wrangler-menu-items erlang-mode-map t)
   )
+
+(if (file-exists-p wrangler_ext)
+    (load  wrangler_ext)
+    nil)
 
 (defun wrangler-menu-remove()
   "Remove Wrangler menus."
@@ -663,7 +683,9 @@
 	        (setq buffer (car list)))
             (progn
               (set-buffer buffer)
-              (revert-buffer t t t)
+              (if (file-exists-p (buffer-file-name buffer))
+                  (revert-buffer t t t)
+                nil)
               (setq list (cdr list))
               (setq buffer (car list)))))))
     
@@ -1138,7 +1160,6 @@
              (if warning
                  (setq has-warning warning)
                nil)
-             (message "Refactoring succeeded %s" modified)
              ;;(update-buffers modified)
              (revert-all-buffers)
              (apply-refac-cmds current-file-name (list 'ok modified)))
@@ -1147,6 +1168,7 @@
              (setq name_change (elt result 1))
              (message "Refactoring succeeded %s" modified)
              ;;(update-buffers modified)
+             (message "current: %s" current-file-name)
              (revert-all-buffers)
              (apply-refac-cmds current-file-name (list (list 'ok modified) name_change)))
             (t
@@ -1185,13 +1207,13 @@
           ((equal result ['abort])
            (message "Refactoring aborted.")))))
           
-                               
+                       
 
 ;; redefined get-file-buffer to handle the difference between
 ;; unix and windows filepath seperator.
 (defun get-file-buffer (filename)
  (let ((buffer)
-	(bs (buffer-list)))
+       (bs (buffer-list)))
         (while (and (not buffer) (not (equal bs nil)))
 	   (let ((b (car bs)))
 	     (if (and (buffer-file-name b)
@@ -2621,6 +2643,11 @@
   	 
 	      
 
+(defun erl-refactor-bug-precond()
+  "Remove bug preconditions."           
+  (interactive)                 
+  (apply-adhoc-refac 'refac_bug_cond))
+
 
 ;;%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 ;;                                                                    %%
@@ -3513,7 +3540,7 @@ Based on the hash function in http://www.haible.de/bruno/hashfunc.html."
      (erl-spawn
        (erl-send-rpc wrangler-erl-node 'wrangler_add_new_refac 'add 
                      (list current-file-name 'gen_refac 
-                           my_gen_refac_menu_items 'windows %WRANGLER_DIR%))
+                           my_gen_refac_menu_items 'emacs 'none (getenv "HOME")))
        (erl-receive ()
            ((['rex ['badrpc rsn]]
              (message "Wrangler failed to add the new menu item: %s" rsn))
@@ -3527,6 +3554,27 @@ Based on the hash function in http://www.haible.de/bruno/hashfunc.html."
        ))) 
 
 
+(defun  remove_from_my_gen_refac_menu_items(name)
+   "Remove a user-defined refactoring from menu."
+   (interactive (list (read-string "Menu item name: "))) 
+   (erl-spawn
+       (erl-send-rpc wrangler-erl-node 'wrangler_add_new_refac 'remove 
+                     (list name 'gen_refac 
+                           my_gen_refac_menu_items 'emacs 'none (getenv "HOME")))
+       (erl-receive ()
+           ((['rex ['badrpc rsn]]
+             (message "Wrangler failed to remove the menu item: %s" rsn))
+            (['rex ['error rsn]]
+             (message "Wrangler failed to remove the menu item: %s" rsn))
+            (['rex ['ok el_filename1 el_filename2]]
+             (load el_filename1)
+             (load el_filename2)
+             (wrangler-menu-remove)
+             (wrangler-menu-init)
+             (message "Menu item removed successfully."))))
+       ))
+
+
 (defun  add_to_my_gen_composite_refac_menu_items()
    "Add a user-defined refactoring to menu."
    (interactive) 
@@ -3535,7 +3583,7 @@ Based on the hash function in http://www.haible.de/bruno/hashfunc.html."
        (erl-send-rpc wrangler-erl-node 'wrangler_add_new_refac 'add 
                      (list current-file-name 'gen_composite_refac 
                            my_gen_composite_refac_menu_items
-                           'windows %WRANGLER_DIR%))
+                           'emacs 'none (getenv "HOME")))
        (erl-receive ()
            ((['rex ['badrpc rsn]]
              (message "Wrangler failed to add the new menu item: %s" rsn))
@@ -3548,6 +3596,26 @@ Based on the hash function in http://www.haible.de/bruno/hashfunc.html."
              (message "New menu item added successfully."))))
        ))) 
  
+
+(defun remove_from_my_gen_composite_refac_menu_items(name)
+   "Remove a user-defined refactoring from menu."
+   (interactive (list (read-string "Menu item name: "))) 
+   (erl-spawn
+       (erl-send-rpc wrangler-erl-node 'wrangler_add_new_refac 'remove 
+                     (list name 'gen_composite_refac 
+                           my_gen_composite_refac_menu_items 'emacs 'none (getenv "HOME")))
+       (erl-receive ()
+           ((['rex ['badrpc rsn]]
+             (message "Wrangler failed to remove the menu item: %s" rsn))
+            (['rex ['error rsn]]
+             (message "Wrangler failed to remove the menu item: %s" rsn))
+            (['rex ['ok el_filename1 el_filename2]]
+             (load el_filename1)
+             (load el_filename2)
+             (wrangler-menu-remove)
+             (wrangler-menu-init)
+             (message "Menu item removed successfully."))))
+       ))
 
 (defun apply-adhoc-refac(callback-module-name) 
   "Get the parameters that need inputs from the user"
@@ -3572,11 +3640,10 @@ Based on the hash function in http://www.haible.de/bruno/hashfunc.html."
                (['rex ['error rsn]]
                 (message "Refactoring failed: error, %s" rsn))
                (['rex ['ok pars]]
-               ;; (message-box "callback %s" callback-module-name buffer-file-name)
                 (apply-adhoc-refac-1 callback-module-name current-file-name line-no column-no 
                                      start-line-no start-col-no end-line-no end-col-no pars)
                 ))))
-      (message "Refactoring aborted."))))
+       (message "Refactoring aborted."))))
 
 (defun apply-adhoc-refac-1(callback-module-name current-file-name line-no column-no 
                            start-line-no start-col-no end-line-no end-col-no pars)  
@@ -3724,7 +3791,7 @@ Based on the hash function in http://www.haible.de/bruno/hashfunc.html."
 
 (defun apply-composite-refac(callback-module-name) 
   "Apply a composite refactoring defined by behaviour gen_composite_refac"
-  (interactive)
+  (interactive (list (read-string "Refactoring Callback module name: ")))       
   (let* ((buffer (current-buffer))
         (current-file-name (buffer-file-name))
         (line-no (current-line-no))
@@ -3733,35 +3800,6 @@ Based on the hash function in http://www.haible.de/bruno/hashfunc.html."
         (region-end   (my-region-end))
         (start-line-no (line-no-pos region-begin))
         (start-col-no  (current-column-pos region-begin)) 
-        (end-line-no   (line-no-pos region-end))
-        (end-col-no    (current-column-pos region-end)))
-    (if (buffers-saved)
-        (erl-spawn
-          (erl-send-rpc wrangler-erl-node 'gen_composite_refac 'input_par_prompts (list callback-module-name))
-          (erl-receive (buffer current-file-name callback-module-name line-no column-no 
-                               start-line-no start-col-no end-line-no end-col-no)
-              ((['rex ['badrpc rsn]]
-                (message "Refactoring failed: the refactoring does not exist!"))        
-               (['rex ['error rsn]]
-                (message "Refactoring failed: error, %s" rsn))
-               (['rex ['ok pars]]
-                (apply-composite-refac-1 callback-module-name current-file-name line-no column-no 
-                                         start-line-no start-col-no end-line-no end-col-no pars)
-                ))))
-      (message "Refactoring aborted."))))
-
-
-(defun apply-composite-refac_1(callback-module-name) 
-  "Apply a composite refactoring defined by behaviour gen_composite_refac"
-  (interactive (list (read-string "Refactoring Callback module name: ")))
-  (let* ((buffer (current-buffer))
-        (current-file-name (buffer-file-name))
-        (line-no (current-line-no))
-        (column-no (current-column-no))
-        (region-begin (my-region-beginning))
-        (region-end   (my-region-end))
-        (start-line-no (line-no-pos region-begin))
-        (start-col-no  (current-column-pos region-begin))
         (end-line-no   (line-no-pos region-end))
         (end-col-no    (current-column-pos region-end)))
     (if (buffers-saved)
@@ -3824,9 +3862,9 @@ Based on the hash function in http://www.haible.de/bruno/hashfunc.html."
              (if (equal modified nil)
                  (message "Refactoring finished, and no file has been changed.")
                (revert-all-buffers)
+             ;;  (with-current-buffer (get-file-buffer-1 current-file-name)
+              ;;  nil)
                (preview-commit-cancel current-file-name modified nil)
-               (with-current-buffer (get-file-buffer-1 current-file-name)
-                 nil)
                (message "Refactoring finished."))))
          (['rex ['ok ['refactoring cmd args]]]
           (apply-a-refac-cmd current-file-name cmd args)) 
@@ -3859,8 +3897,8 @@ Based on the hash function in http://www.haible.de/bruno/hashfunc.html."
                           (append newargs (list tab-width))))
       (erl-receive(current-file-name)
           ((['rex result]
-            (process-result current-file-name result 0 0 t)))
-        )))
+            (process-result (buffer-file-name) result 0 0 t))
+        ))))
   )
 
 (defvar refac-cmd-name-map
@@ -3914,6 +3952,101 @@ Based on the hash function in http://www.haible.de/bruno/hashfunc.html."
     (setq args (cdr args)))
   )
  
+
+
+(defun erl-refactor-generate-migration-rules(name)
+  "generated API migration rules from API interface module."
+  (interactive (list (read-string "Module name for the API migration rules to be generated: ")
+		     ))
+  (let ((current-file-name (buffer-file-name))
+	(buffer (current-buffer)))
+  (if (buffers-saved)
+      (erl-spawn
+	(erl-send-rpc wrangler-erl-node 'emacs_wrangler 'apply_refac 
+                      (list 'generate_rule_based_api_migration_mod(list current-file-name name)
+                            wrangler-search-paths))
+        (erl-receive (buffer name current-file-name)
+	    ((['rex ['badrpc rsn]]
+	      (message "Refactoring failed: %S" rsn))
+	     (['rex ['error rsn]]
+	      (message "Refactoring failed: %s" rsn))
+	     (['rex ['ok newfile]]
+              (find-file newfile)
+              (message "Rule generation finished.")
+              ))))             
+    (message "Rule generation aborted."))))
+
+(defun erl-refactor-regexp-to-re()
+    "api migration from regexp to re"
+    (interactive) 
+    (let ((current-file-name (buffer-file-name))
+          (buffer (current-buffer))
+          (scope (if (yes-or-no-p "Only apply to the current file?")
+                     (list (buffer-file-name))
+                   wrangler-search-paths)))
+    (if (buffers-saved)
+        (erl-spawn
+          (erl-send-rpc wrangler-erl-node 'emacs_wrangler 'apply_refac 
+                        (list 'do_api_migration (list scope "refac_regexp_to_re" 
+                                                      wrangler-search-paths 'emacs tab-width)
+                              wrangler-search-paths))
+          (erl-receive (buffer current-file-name)
+              ((['rex ['badrpc rsn]]
+                     (message "Refactoring failed: %S" rsn))
+               (['rex ['error rsn]]
+                (message "Refactoring failed: %s" rsn))
+               (['rex ['ok modified]]
+                (if (equal modified nil)
+                    (message "API migration finished, and no file has been changed.")
+                  (preview-commit-cancel current-file-name modified nil))))))
+      (message "API migration aborted."))))
+
+         
+       
+(defun erl-refactor-apply-api-migration-file(name)
+  "apply API migration rules."
+  (interactive (list (read-string "API migration rule module: ")
+		     ))
+  (let ((current-file-name (buffer-file-name))
+	(buffer (current-buffer)))
+  (if (buffers-saved)
+      (erl-spawn
+	(erl-send-rpc wrangler-erl-node 'emacs_wrangler 'apply_refac 
+                      (list 'do_api_migration (list (list current-file-name) name 
+                                                    wrangler-search-paths 'emacs tab-width)
+                            wrangler-search-paths))
+        (erl-receive (buffer current-file-name)
+	    ((['rex ['badrpc rsn]]
+	      (message "Refactoring failed: %S" rsn))
+	     (['rex ['error rsn]]
+	      (message "Refactoring failed: %s" rsn))
+	     (['rex ['ok modified]]
+              (if (equal modified nil)
+                  (message "API migration finished, and no file has been changed.")
+                (preview-commit-cancel current-file-name modified nil))))))                         
+    (message "API migration aborted."))))
+
+(defun erl-refactor-apply-api-migration-dirs(name)
+  "apply API migration rules."
+  (interactive (list (read-string "API migration rule module: ")
+		     ))
+  (let ((current-file-name (buffer-file-name))
+	(buffer (current-buffer)))
+  (if (buffers-saved)
+      (erl-spawn
+	(erl-send-rpc wrangler-erl-node 'emacs_wrangler 'apply_refac 
+                      (list 'do_api_migration (list wrangler-search-paths name wrangler-search-paths 'emacs tab-width)
+                            wrangler-search-paths))
+        (erl-receive (buffer current-file-name)
+	    ((['rex ['badrpc rsn]]
+	      (message "Refactoring failed: %S" rsn))
+	     (['rex ['error rsn]]
+	      (message "Refactoring failed: %s" rsn))
+	     (['rex ['ok modified]]
+              (if (equal modified nil)
+                  (message "API migration finished, and no file has been changed.")
+                (preview-commit-cancel current-file-name modified nil))))))                         
+    (message "API migration aborted."))))
 
  
 (require 'tempo)
@@ -3997,4 +4130,123 @@ Based on the hash function in http://www.haible.de/bruno/hashfunc.html."
 Please see the function `tempo-define-template'.")
 
 
-    
+(tempo-define-template "gen-composite-refac"
+  '((erlang-skel-include erlang-skel-large-header)
+    "-behaviour(gen_composite_refac)." n n
+   
+    "%% Include files" n 
+    "-include_lib(\"wrangler/include/wrangler.hrl\")." n n
+    (erlang-skel-double-separator-start 3)
+    "%% gen_composite_refac callbacks" n
+    "-export([input_par_prompts/0,select_focus/1, " n>
+    "composite_refac/1])." n n 
+
+    (erlang-skel-double-separator-start 3)
+    "%%% gen_composite_refac callbacks" n
+    (erlang-skel-double-separator-end 3)
+    n
+    (erlang-skel-separator-start 2)
+    "%% @private" n 
+    "%% @doc" n
+    "%% Prompts for parameter inputs" n
+    "%%" n
+    "%% @spec input_par_prompts() -> [string()]" n
+    (erlang-skel-separator-end 2)
+    "input_par_prompts() ->" n>
+    "[]." n
+    n
+    (erlang-skel-separator-start 2)
+    "%% @private" n
+    "%% @doc" n
+    "%% Select the focus of the refactoring." n
+    "%%" n
+    "%% @spec select_focus(Args::#args{}) ->" n
+    "%%                {ok, syntaxTree()} |" n
+    "%%                {ok, none}" n
+    (erlang-skel-separator-end 2)
+    "select_focus(_Args) ->" n>
+    "{ok, none}." n>
+     n
+    (erlang-skel-separator-start 2)
+    "%% @private" n
+    "%% @doc" n
+    "%% This function defines the composite refactoring script." n
+    "%%" n
+    "%% @spec composite_refac(Args::#args{}) -> composite_refac()|[]. " n
+    (erlang-skel-separator-end 2)
+    "composite_refac(_Args) -> []." n>
+    n
+    (erlang-skel-double-separator-start 3)
+    "%%% Internal functions" n
+    (erlang-skel-double-separator-end 3)
+    )
+  "*The template of a gen_refac.
+Please see the function `tempo-define-template'.")
+
+
+(defvar gen_composite_refac_menu_items
+`(("Batch Inline Vars" refac_batch_inline_vars)
+("Batch Clone Elimination" refac_batch_clone_elimination)
+))
+
+(defvar gen_refac_menu_items
+`(("Swap Function Arguments" refac_swap_function_arguments)
+("Specialise A Function" refac_specialise_a_function)
+("Remove An Import Attribute" refac_remove_an_import_attribute)
+("Remove An Argument" refac_remove_an_argument)
+("Keysearch To Keyfind" refac_keysearch_to_keyfind)
+("Apply To Remote Call" refac_apply_to_remote_call)
+("Add To Export" refac_add_to_export)
+("Add An Import Attribute" refac_add_an_import_attribute)
+))
+
+
+(defun refac_batch_inline_vars()
+  (interactive)
+  (apply-composite-refac 'refac_batch_inline_vars))
+
+
+(defun refac_batch_clone_elimination()
+  (interactive)
+  (apply-composite-refac 'refac_batch_clone_elimination))
+
+
+(defun refac_swap_function_arguments()
+  (interactive)
+  (apply-adhoc-refac 'refac_swap_function_arguments))
+
+
+(defun refac_specialise_a_function()
+  (interactive)
+  (apply-adhoc-refac 'refac_specialise_a_function))
+
+
+(defun refac_remove_an_import_attribute()
+  (interactive)
+  (apply-adhoc-refac 'refac_remove_an_import_attribute))
+
+
+(defun refac_remove_an_argument()
+  (interactive)
+  (apply-adhoc-refac 'refac_remove_an_argument))
+
+
+(defun refac_keysearch_to_keyfind()
+  (interactive)
+  (apply-adhoc-refac 'refac_keysearch_to_keyfind))
+
+
+(defun refac_apply_to_remote_call()
+  (interactive)
+  (apply-adhoc-refac 'refac_apply_to_remote_call))
+
+
+(defun refac_add_to_export()
+  (interactive)
+  (apply-adhoc-refac 'refac_add_to_export))
+
+
+(defun refac_add_an_import_attribute()
+  (interactive)
+  (apply-adhoc-refac 'refac_add_an_import_attribute))
+
