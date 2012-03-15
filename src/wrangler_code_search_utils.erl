@@ -28,7 +28,7 @@ start_counter_process() ->
 
 %%-spec start_counter_process(set()) -> pid(). 
 start_counter_process(UsedNames) ->
-    spawn_link(fun () -> counter_loop({1, UsedNames, []}) end).
+    spawn_link(?MODULE, counter_loop, [{1, UsedNames, []}]).
 
 %%-spec stop_counter_process(atom() | pid() | port() | {atom(),atom()}) -> 'stop'.
 stop_counter_process(Pid) ->

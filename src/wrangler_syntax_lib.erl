@@ -59,6 +59,7 @@
 
 -export([function_name_expansions/1, split_lines/1]).
 
+-export([env_loop/1]).
 %% =====================================================================
 %% @spec variables(syntaxTree()) -> set(atom())
 %%
@@ -941,7 +942,7 @@ delete_binding_anns([]) -> [].
 
 
 start_env_process() ->
-    spawn_link(fun() -> env_loop([]) end).
+    spawn_link(?MODULE, env_loop, [[]]).
    
 stop_env_process(Pid) ->
     Pid ! stop.
