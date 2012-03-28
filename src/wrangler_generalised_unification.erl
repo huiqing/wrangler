@@ -69,7 +69,8 @@ extended_case_expr_match(TempExp, {ExprArg, ExprCs}, Cond) ->
             false;
         [{true,Subst0}] ->
             case extended_clause_match(TempCs, ExprCs) of 
-                false -> false;
+                false -> 
+                    false;
                 {true, {Subst1, TempCsAcc}} ->
                     Subst = [[{case wrangler_syntax:type(V) of
                                    variable -> wrangler_syntax:variable_name(V);
@@ -115,7 +116,7 @@ extended_clause_match(TempCs, [C|ExprCs], {SubstAcc,TempCsAcc}) ->
 get_a_match_clause([{Index, C}|TempCs], ExpC) ->
     [Pat] = wrangler_syntax:clause_patterns(ExpC),
     FreeVars = api_refac:free_vars(Pat),
-    if FreeVars /=[] -> 
+    if FreeVars /=[] ->  %%TODO: check why this is needed!.
             false;
        true ->
             case wrangler_syntax:type(Pat) of
