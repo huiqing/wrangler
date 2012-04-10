@@ -21,7 +21,6 @@
 
 -export([parse_file/3, parse_file/5]).
 -export([interpret_file_attribute/1, expand_macros/2]).
--export([server/6]).
 -define(DEFAULT_TABWIDTH, 8).
 -define(DEFAULT_FILEFORMAT, unix).
 
@@ -47,7 +46,7 @@
 
 open(File, Path, Pdm, TabWidth, FileFormat) ->
     Self = self(),
-    Epp = spawn(?MODULE, server, [Self, File, Path, Pdm, TabWidth, FileFormat]),
+    Epp = spawn(fun() -> server(Self, File, Path, Pdm, TabWidth, FileFormat) end),
     epp_request(Epp).
 
 close(Epp) ->

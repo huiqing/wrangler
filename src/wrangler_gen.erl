@@ -30,6 +30,10 @@
 %%
 %% =====================================================================
 %% @doc This module specifies a suite of refactoring command generators.
+%% The command generators provided by this modules are used for scripting
+%% composite refactorings. For details on how to script composite 
+%% refactorings, see <a href="gen_composite_refac.html">Gen_Composite_Refac</a>
+
 -module(wrangler_gen).
 
 -export([rename_fun/4, rename_fun/5,
@@ -47,12 +51,6 @@
 -compile(export_all).
 
 -include("../include/wrangler.hrl").
-
--type (refac_name():: atom()).
-
--type (pars():: [term()]).
-
--type (elementary_refac()::{refactoring, refac_name(), pars()}).
 
 -type (file_filter()::{file,fun((File::filename()) -> boolean())}).
 
@@ -840,10 +838,11 @@ test_tuple_args(SearchPaths, Lazy) ->
                end,
                2, 3, Lazy, SearchPaths).
 
-
+%%@private
 add_to_export(ModOrFile, FA, SearchPaths) ->
     add_to_export(ModOrFile, FA, true, SearchPaths).
 
+%%@doc Command generator for adding function names to the export list of a module.
 -spec add_to_export(ModOrFile::mod_or_file(),
                     Fa:: fa(),
                     Lazy :: boolean(),
@@ -1265,11 +1264,12 @@ test_refac_3({lazy_gen, Gen}) ->
     end.
 
 
-
+%%@private
 inline_var(ModOrFile, FA, Loc, SearchPaths) ->
     inline_var(ModOrFile, FA, Loc, true, SearchPaths).
 
-%% @doc Command generator for inlining variable names.
+
+%%@doc Command generator for inlining variable names.
 -spec inline_var(ModOrFile::mod_or_file(), 
                  FA::fa(),
                  MatchExprFilter::fun((MatchExpr::syntaxTree())-> boolean()),

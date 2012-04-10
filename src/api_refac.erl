@@ -1,4 +1,4 @@
-%% Copyright (c) 2010, Huiqing Li, Simon Thompson
+%% Copyright (c) 2012, Huiqing Li, Simon Thompson
 %% All rights reserved.
 %%
 %% Redistribution and use in source and binary forms, with or without
@@ -283,31 +283,31 @@
 %% Some example refactorings implemented using the Wrangler API:
 %%<ul>
 %%<li>
-%%<a href="file:refac_swap_args.erl" > Swap arguments of a function;</a>.
+%%<a href="file:refac_swap_function_arguments.erl" > Swap arguments of a function;</a>.
 %%</li>
 %%<li>
-%%<a href="file:refac_remove_arg.erl" > Remove an argument of a function;</a>.
+%%<a href="file:refac_remove_an_argument.erl" > Remove an argument of a function;</a>.
 %%</li>
 %%<li>
-%%<a href="file:refac_keysearch_to_keyfind.erl"> replace the uses of lists:keysearch/3 with lists:keyfind/3; </a>
-%%</li>
-%%<li>
-%%<a href="file:refac_specialise.erl"> Specialise a function definition; </a>
+%%<a href="file:refac_specialise_a_function.erl"> Specialise a function definition; </a>
 %%</li>
 %%<li>
 %%<a href="file:refac_apply_to_remote_call.erl"> Apply to remote function call; </a>
 %%</li>
 %%<li>
-%%<a href="file:refac_intro_import.erl">Introduce an import attribute; </a>
+%%<a href="file:refac_add_an_import_attribute.erl">Introduce an import attribute; </a>
 %%</li>
 %%<li>
-%%<a href="file:refac_remove_import.erl">Remove an import attribute;</a>
+%%<a href="file:refac_remove_an_import_attribute.erl">Remove an import attribute;</a>
 %%</li>
 %%<li>
-%%<a href="file:refac_list.erl"> Various list-related transformations;</a>
+%%<a href="file:refac_batch_clone_elimination.erl" >Batch clone elimination;</a>.
 %%</li>
 %%<li>
-%%<a href="file:refac_batch_rename_fun.erl"> Batch renaming of function names from camelCaseto camel_case. </a>
+%%<a href="file:refac_batch_rename_fun.erl">Batch renaming of function names from camelCase to camel_case. </a>
+%%</li>
+%%<li>
+%%<a href="file:refac_batch_prefix_module.erl">Add a prefix to Erlang module names. </a>
 %%</li>
 %%<li>
 %%<a href="file:inspec_examples.erl"> A collection of code inspectors written using the Wrangler API. </a>
@@ -869,6 +869,7 @@ remove_from_import(Node, _FA={F,A}) ->
     end.
 
 %% =======================================================================
+%%@private
 add_to_export(Node, FAtoAdd) ->
     add_to_export_after(Node, FAtoAdd, none).
 
@@ -964,7 +965,7 @@ pp_1([E|Es]) ->
 %%@private
 quote(Str) ->    
     wrangler_misc:parse_annotate_expr(Str).
-
+%%@private
 anti_quote(Str) ->    
     wrangler_misc:parse_annotate_expr(Str).
 
@@ -2423,6 +2424,7 @@ meta_apply_templates(_MFA={M,F,A}) ->
 
 
 %% not tested yet.
+%%@private
 get_mfas(File, Order) ->
     case Order == td orelse Order == bu of
         true ->
