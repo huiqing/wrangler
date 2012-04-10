@@ -6,16 +6,16 @@
 
 %%@hidden
 %%@private
--export([composite_refac/1, input_par_prompts/0]).
+-export([composite_refac/1, select_focus/1, input_par_prompts/0]).
 
 -behaviour(gen_composite_refac).
 
--include_lib("wrangler/include/wrangler.hrl").
+-include_lib("../include/wrangler.hrl").
 
 input_par_prompts() ->
     [].
 
-select_foucs(_Args) ->
+select_focus(_Args) ->
     {ok, none}.
 
 composite_refac(_Args=#args{search_paths=SearchPaths}) ->

@@ -11,7 +11,7 @@
 
 <h1>Module wrangler_refacs</h1>
 <ul class="index"><li><a href="#description">Description</a></li><li><a href="#types">Data Types</a></li><li><a href="#index">Function Index</a></li><li><a href="#functions">Function Details</a></li></ul>This module describes the refactorings that are currently supported by Wrangler.
-<p>Copyright © 2006-2011 Huiqing Li, Simon Thompson
+<p>Copyright © 2006-2012 Huiqing Li, Simon Thompson
  </p>
 
 <p><b>Authors:</b> Huiqing Li, Simon Thompson [<em>web site:</em> <tt><a href="http://www.cs.kent.ac.uk/projects/wrangler" target="_top">http://www.cs.kent.ac.uk/projects/wrangler</a></tt>].</p>
@@ -28,8 +28,7 @@
 
 <h2><a name="index">Function Index</a></h2>
 <table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#add_a_tag-7">add_a_tag/7</a></td><td>Add a tag to all the messages received by a server process (Beta).</td></tr>
-<tr><td valign="top"><a href="#apply_changes_eclipse-3">apply_changes_eclipse/3</a></td><td>gen_refac refactorings - delegate functions in order to achieve more clear API (especially for Eclipse)
- private.</td></tr>
+<tr><td valign="top"><a href="#apply_changes_eclipse-3">apply_changes_eclipse/3</a></td><td>gen_refac refactorings - delegate functions in order to achieve more clear API (especially for Eclipse).</td></tr>
 <tr><td valign="top"><a href="#eqc_fsm_to_record-4">eqc_fsm_to_record/4</a></td><td>Turn a non-record representation of eqc_fsm state into a record representation.</td></tr>
 <tr><td valign="top"><a href="#eqc_statem_to_record-4">eqc_statem_to_record/4</a></td><td>Turn a non-record representation of eqc_statem state into a record representation.</td></tr>
 <tr><td valign="top"><a href="#fold_against_macro-6">fold_against_macro/6</a></td><td>Fold expressions/patterns against a macro definition.</td></tr>
@@ -41,8 +40,6 @@
 <tr><td valign="top"><a href="#get_user_refactorings-1">get_user_refactorings/1</a></td><td>get all user refactoring modules (gen_refac and gen_composite_refac).</td></tr>
 <tr><td valign="top"><a href="#inline_var-6">inline_var/6</a></td><td>Inline a variable definition.</td></tr>
 <tr><td valign="top"><a href="#intro_new_var-7">intro_new_var/7</a></td><td>Introduce a new variable to represent an expression selected.</td></tr>
-<tr><td valign="top"><a href="#load_callback_mod_eclipse-2">load_callback_mod_eclipse/2</a></td><td>load new callback module (ad hoc refactorings).</td></tr>
-<tr><td valign="top"><a href="#load_user_refactorings-1">load_user_refactorings/1</a></td><td>load user's own refactorings from my_gen_refac.</td></tr>
 <tr><td valign="top"><a href="#merge_forall-4">merge_forall/4</a></td><td>Merge nested but undependent ?FORALLs into one ?FORALL.</td></tr>
 <tr><td valign="top"><a href="#merge_let-4">merge_let/4</a></td><td>Merge nested but independent ?LETs into one ?LET.</td></tr>
 <tr><td valign="top"><a href="#move_fun-7">move_fun/7</a></td><td>Move a function definition from its current module to another.</td></tr>
@@ -87,8 +84,7 @@
 <h3 class="function"><a name="apply_changes_eclipse-3">apply_changes_eclipse/3</a></h3>
 <div class="spec">
 <p><tt>apply_changes_eclipse(Module::module(), Args::[term()], CandsNotToChange::[term()]) -&gt; {ok, [{<a href="#type-filename">filename()</a>, <a href="#type-filename">filename()</a>, <a href="#type-syntaxTree">syntaxTree()</a>}]} | {error, term()}</tt><br></p>
-</div><p>gen_refac refactorings - delegate functions in order to achieve more clear API (especially for Eclipse)
- private</p>
+</div><p>gen_refac refactorings - delegate functions in order to achieve more clear API (especially for Eclipse)</p>
 
 <h3 class="function"><a name="eqc_fsm_to_record-4">eqc_fsm_to_record/4</a></h3>
 <div class="spec">
@@ -322,16 +318,6 @@
   Usage: Highlight the expression of interest, then selected the <em>Introduce New Variable</em>
   from <em>Refactor</em>, Wrangler will then prompt for the new variable name.
   </p></p>
-
-<h3 class="function"><a name="load_callback_mod_eclipse-2">load_callback_mod_eclipse/2</a></h3>
-<div class="spec">
-<p><tt>load_callback_mod_eclipse(Module::module(), Path::string()) -&gt; ok | {error, Reason::term()}</tt><br></p>
-</div><p>load new callback module (ad hoc refactorings)</p>
-
-<h3 class="function"><a name="load_user_refactorings-1">load_user_refactorings/1</a></h3>
-<div class="spec">
-<p><tt>load_user_refactorings(Path::string()) -&gt; ok</tt><br></p>
-</div><p>load user's own refactorings from my_gen_refac</p>
 
 <h3 class="function"><a name="merge_forall-4">merge_forall/4</a></h3>
 <div class="spec">
@@ -595,6 +581,6 @@
 <hr>
 
 <div class="navbar"><a name="#navbar_bottom"></a><table width="100%" border="0" cellspacing="0" cellpadding="2" summary="navigation bar"><tr><td><a href="overview-summary.html" target="overviewFrame">Overview</a></td><td><a href="http://www.erlang.org/"><img src="erlang.png" align="right" border="0" alt="erlang logo"></a></td></tr></table></div>
-<p><i>Generated by EDoc, Feb 16 2012, 09:37:07.</i></p>
+<p><i>Generated by EDoc, Mar 28 2012, 20:43:05.</i></p>
 </body>
 </html>

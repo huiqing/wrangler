@@ -241,6 +241,18 @@ Function CheckErlang
 
   ClearErrors
      
+  ReadRegStr $R0 HKLM "SOFTWARE\Ericsson\Erlang\5.9.1" ""
+  StrCpy $varErlangDir $R0
+  StrCpy $R1 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles"
+  StrCpy $R2 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles0"
+  StrCpy $R3 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles1"
+  StrCpy $R4 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles2"
+  StrCpy $R5 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles3"
+  StrCpy $R6 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varGenRefacSrcFiles"
+  StrCpy $R7 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varGenCompRefacSrcFiles"
+  StrCpy $varErlangEmacsDir "$R0\lib\tools-2.6.7\emacs"
+  IfErrors 0 ErlangFound
+  
   ReadRegStr $R0 HKLM "SOFTWARE\Ericsson\Erlang\5.9" ""
   StrCpy $varErlangDir $R0
   StrCpy $R1 "$R0\bin\${ERLCEXE} -pa ebin -I include -o ebin $varWranglerSrcFiles"

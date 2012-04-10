@@ -14,7 +14,7 @@
 
 -behaviour(gen_composite_refac).
 
--include_lib("wrangler/include/wrangler.hrl").
+-include("../../include/wrangler.hrl").
 
 -spec input_par_prompts() -> [string()].
 input_par_prompts() ->

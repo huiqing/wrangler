@@ -336,10 +336,6 @@
     ("Nested Receive Expression" erl-wrangler-code-inspector-nested-receives)
     ("Long Functions" erl-wrangler-code-inspector-long-funs)
     ("Large Modules" erl-wrangler-code-inspector-large-mods)
-    ("Generate Function Callgraph" erl-wrangler-code-inspector-callgraph)
-    ("Generate Module Graph" erl-wrangler-code-inspector-module-graph)
-    ("Cyclic Module Dependency" erl-wrangler-code-inspector-cyclic-graph)
-    ("Module Dependency via Only Internal Functions" erl-wrangler-code-inspector-improper-module-dependency)
     ;;("Component Extraction Suggestion" erl-wrangler-code-component-extraction)
     ("Show Non Tail Recursive Servers" erl-wrangler-code-inspector-non-tail-recursive-servers)
     ("Incomplete Receive Patterns" erl-wrangler-code-inspector-no-flush)
@@ -361,6 +357,12 @@
       ;;  ("Detect Similar Code in Current Buffer (Old)" erl-refactor-sim-code-detection-in-buffer)
       ;;  ("Detect Similar Code in Dirs (Old)" erl-refactor-sim-code-detection-in-dirs)
       ))
+     nil
+     ("Module Structure"
+      (("Generate Function Callgraph" erl-wrangler-code-inspector-callgraph)
+       ("Generate Module Graph" erl-wrangler-code-inspector-module-graph)
+       ("Cyclic Module Dependency" erl-wrangler-code-inspector-cyclic-graph)
+       ("Module Dependency via Only Internal Functions" erl-wrangler-code-inspector-improper-module-dependency)))
     nil
     ("API Migration"
      (("Generate API Migration Rules"  erl-refactor-generate-migration-rules)
@@ -3776,7 +3778,7 @@ Based on the hash function in http://www.haible.de/bruno/hashfunc.html."
   (setq unopened-files nil)
   candidates-not-to-change)  
 
-(defun apply-composite-refac(callback-module-name) 
+(defun apply-adhoc-composite-refac(callback-module-name) 
   "Apply a composite refactoring defined by behaviour gen_composite_refac"
   (interactive (list (read-string "Refactoring Callback module name: ")))       
   (let* ((buffer (current-buffer))
@@ -4225,6 +4227,73 @@ Please see the function `tempo-define-template'.")
 (defun refac_keysearch_to_keyfind()
   (interactive)
   (apply-adhoc-refac 'refac_keysearch_to_keyfind))
+
+
+(defun refac_apply_to_remote_call()
+  (interactive)
+  (apply-adhoc-refac 'refac_apply_to_remote_call))
+
+
+(defun refac_add_to_export()
+  (interactive)
+  (apply-adhoc-refac 'refac_add_to_export))
+
+
+(defun refac_add_an_import_attribute()
+  (interactive)
+  (apply-adhoc-refac 'refac_add_an_import_attribute))
+
+
+(defvar gen_composite_refac_menu_items
+`(("Batch Prefix Module" refac_batch_prefix_module)
+("Batch Inline Vars" refac_batch_inline_vars)
+("Batch Clone Elimination" refac_batch_clone_elimination)
+))
+
+(defvar gen_refac_menu_items
+`(("Swap Function Arguments" refac_swap_function_arguments)
+("Specialise A Function" refac_specialise_a_function)
+("Remove An Import Attribute" refac_remove_an_import_attribute)
+("Remove An Argument" refac_remove_an_argument)
+("Apply To Remote Call" refac_apply_to_remote_call)
+("Add To Export" refac_add_to_export)
+("Add An Import Attribute" refac_add_an_import_attribute)
+))
+
+
+(defun refac_batch_prefix_module()
+  (interactive)
+  (apply-composite-refac 'refac_batch_prefix_module))
+
+
+(defun refac_batch_inline_vars()
+  (interactive)
+  (apply-composite-refac 'refac_batch_inline_vars))
+
+
+(defun refac_batch_clone_elimination()
+  (interactive)
+  (apply-composite-refac 'refac_batch_clone_elimination))
+
+
+(defun refac_swap_function_arguments()
+  (interactive)
+  (apply-adhoc-refac 'refac_swap_function_arguments))
+
+
+(defun refac_specialise_a_function()
+  (interactive)
+  (apply-adhoc-refac 'refac_specialise_a_function))
+
+
+(defun refac_remove_an_import_attribute()
+  (interactive)
+  (apply-adhoc-refac 'refac_remove_an_import_attribute))
+
+
+(defun refac_remove_an_argument()
+  (interactive)
+  (apply-adhoc-refac 'refac_remove_an_argument))
 
 
 (defun refac_apply_to_remote_call()

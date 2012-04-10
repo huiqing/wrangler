@@ -1,7 +1,7 @@
 
                     Wrangler, the Erlang Refactorer
                 a snapshot of our current prototype
-                            17/02/2012
+                            28/03/2012
               http://www.cs.kent.ac.uk/projects/wrangler/
 
 --------------------------------------------------------------------------------
@@ -53,6 +53,11 @@ add the following lines to your .emacs or .xemacs/init.el (for XEmacs):
 (NOTE: you need to replace <PathToErlang>, <PathToWrangler>
 with the correct directory; and <ToolsVer> with the correct version number.  
 
+--------------------------------- Documentation -------------------------------
+
+Wrangler online documentation is available from 
+    http://refactoringtools.github.com/wrangler
+
 --------------------- how to use the refactorer ----------------
 
   1. Open an Erlang source file in the Emacs editor, you should have a
@@ -76,160 +81,19 @@ with the correct directory; and <ToolsVer> with the correct version number.
      current filename (should be the module name, as well), the
      refactoring command, and the current cursor position. For
      some refactorings, you'll also need to highlight an 
-     expression, or enter a new name. Here's the current list:
+     expression, or enter a new name. 
 
-     Rename variable/function   : place cursor at the identifier to
-                                  be renamed, you'll be prompted for a
-                                  new name.
-
-     Rename module              : place cursor at anywhere within the
-                                  module, you'll be prompted for a new 
-				  name.
-
-     Generalise definition       : highlight the expression on which
-                                  the function is going to be
-                                  generalised, you'll be prompted for
-                                  a new parameter name.
-     Move a function definition
-     to another module          : place cursor at anywhere within the
-                                  function definition, you'll be
-                                  prompted for the target module name.
-
-     Function extraction        : highlight the expression/expression
-	                          sequence that you wish to extract,
-	                          you'll be prompted for a new function
-                                  name.
-     Fold expression against 
-     function                   : place cursor at anywhere at the function
-                                  clause. Wrangler will guide you through 
-	                          the possible candidates one by one, and 
-                                  ask whether you want to fold it or not.
-
-     Introduce new macro        : highlight the expression/pattern that you
-                                  wish to replace with macro application, and
-                                  you'll be prompted from a new macro name.
-
-     Fold against macro def     : place cursor at anywhere at the function
-                                  definition. Wrangler will direct you through
-                                  the possible candidates one by one, and for 
-                                  each candidate ask whether you want to fold
-                                  it or not. 
-
-
-     Tuple function arguments   : highlight the sequence of parameters to be
-                                  grouped  into a tuple from the function 
-                                  definition, then select the refactoring   
-                                  command from the menu. 
-     
-
-     Identical expression search : highlight the expression/expression sequence
-	                           you are interested, Wrangler will show you 
-	                           the found expression/expression sequences. 
-
-     Detect identical code  
-     in current buffer          : select the refactoring command from the 
-                                  menu, you'll be prompted for the minimum 
-	                          number of tokens a duplicated code fragment 
-                                  should have, and the number of times that a 
-                                  code fragment is duplicated.
-                                  
-     Detect identical code 
-     in Dirs                    : select the refactoring command from the menu,
-	                          and you will be prompted for the minimum 
-                                  number of tokens a duplicated code fragment 
-                                  should have, and the minimum number of times  
-                                  that a code fragment is duplicated. Wrangler 
-                                  searches duplicated code fragments from the 
-                                  directories specified by the search-paths (see 
-                                  Customize Wrangler).
-
-     Similar expression search  : highlight the expression/expression sequence
-                                  you are interested, select the command from 
-                                  the menu, and Wrangler will prompt you to 
-                                  input a similarity score. 
-
-     Detect similar code in     : select the refactoring command from the 
-     current buffer               menu, and you'll be prompted for 3 parameters,
-                                  i.e. the minimum number of expressions in a 
-                                  expression sequence, the minimum number of 
-                                  duplication, and a similarity score.
-
-     Detect similar code in     : select the refactoring command from the menu,
-     dirs                         and you'll be prompted for 3 parameters, i.e.
-                                  the minimum number of expressions in a   
-                                  expression sequence, the minimum number of 
-                                  times of duplication, and a similarity score.
-                                  Wrangler searchs similar code in the   
-                                  directories specified by the search-paths.
-                                  (see Customize Wrangler).
-
-	                        
-     Rename a process           :place the cursor at the process name
-                                 to be renamed, and you will be
-                                 prompted for the new name.
-
-     Register a process         :highlight the match expression whose
-                                 right-hand side is the spawn
-                                 expression that creates the process,
-                                 and left-hand side is the process
-                                 identifier, and you will be prompted
-                                 for the new process name.
- 
-     From fun to process        :place the cursor at the function name
-                                 of the function definition to be
-                                 refactored, and you will be prompted
-                                 for the new process name.
-
-    Add tag to messages         :place the cursor at the function
-                                 whose body contains the receive
-                                 expression of the server process, and
-                                 you will be prompted for the tag name.
-
-    Unfold a function application: place the cursor at the function name part 
-                                   of the function application, then select the
-                                  'Unfold Function Application' command.
-    Introduce a ?LET            : highlight the expression, which should be a
-                                  QC generator, then select the refactoring command,
-				                  you will be prompted for the pattern variable name.
-    Merge ?LETs                 : Select the refactoring command, and Wrangler will 
-                                  guide you through the possible candidates one by one, 
-				                  and ask whether you want to merge it or not.
-    Merge ?FORALLs              : Select the refactoring command, and Wrangler will 
-                                  guide you through the possible candidates one by one,
-				                  and ask whether you want to merge it or not.
-    eqc_statem State To Record  : Select the refactoring command, and Wrangler will
-                                  check the current type of the state machine, and prompt 
-				                 you to input the record and field names if Wrangler is 
-                                  able to proceed the refactoring.
-    eqc_fsm State To Record     : Select the refactoring command, and Wrangler will
-                                  check the current type of the state machine, and prompt 
-				                  you to input the record and field names if Wrangler is 
-                                  able to process the refactoring.                                  	
-
-     Introduce a new variable    : Highlight the expression of interest, then select
-                                  'Introduce New Variable' from the Refactor menu, 
-                                  Wrangler will then prompt for the new variable name.
-
-    Inline a variable           : To unfold a particular use instance of a variable,
-                                  point the cursor to that instance, and then select
-                                  'Inline Variable' from the 'Refactor'  menu; to unfold
-                                  some, or all, use instances of a variable, point the 
-                                  cursor to the define occurrence of the variable, then 
-                                  the refactoring command, Wrangler will search for the 
-                                  use occurrences of the variable selected, and let you
-                                  choose which instances to unfold. Only variables defined
-                                  via a match expression of the format: VarName=Expr 
-                                  can be inlined.
-
- 6. The 'Customize Wrangler' menu in the 'Refactor' submenu allows you specify 
- the boundary of the system by giving the list of directories to
- search for Erlang source files/header files that could be affected by a
- refactoring.
+  6. The 'Customize Wrangler' menu in the 'Refactor' submenu allows 
+     you specify the boundary of the system by giving the list of 
+     directories to  search for Erlang source files/header files that 
+     could be affected by a refactoring.
 
 ------------------------Major changes from wrangler-0.9.3----------
 
 -- A DSL for composing composite refactorings froom elementary ones.
 -- Consistent refactoring of type specs when a function interface is changed.
+-- Support for API migration.
+-- Documentation updated.
 -- A number of bug fixes.
 
 ------------------------Major changes from Wrangler-0.9.2.4--------

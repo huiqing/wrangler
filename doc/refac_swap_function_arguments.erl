@@ -24,7 +24,7 @@
 
 -export([swap_args/7]).
 
--include_lib("wrangler/include/wrangler.hrl").
+-include("../../include/wrangler.hrl").
 
 -import(api_refac, [fun_define_info/1]).
 
