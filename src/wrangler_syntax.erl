@@ -177,7 +177,6 @@
 	 warning_marker/1, warning_marker_info/1,
 	 default_literals_vars/2, empty_node/0]).
 	
-
 %% =====================================================================
 %% IMPLEMENTATION NOTES:
 %%
@@ -3067,7 +3066,11 @@ qualified_name_segments(Node) ->
 %% @see is_form/1
 %% @see rule/2
 
--record(function, {name, clauses}).
+-record(function, {name, clauses}). %% to be back compatible; will be 
+                                    %% removed when wrangler no longer 
+                                    %% uses the erl_syntax module.
+
+-record(func, {name, clauses}).
 
 %% type(Node) = function
 %% data(Node) = #function{name :: Name, clauses :: Clauses}
@@ -3095,10 +3098,18 @@ qualified_name_segments(Node) ->
 %%	`erl_parse' clauses.
 
 function(Name, Clauses) ->
-    tree(function,
-	 #function{name = update_ann({syntax_path, function_name}, Name), 
-                   clauses = [update_ann({syntax_path, function_clause}, C)
-                              ||C<-Clauses]}).
+    case syntax_tools_vsn() >= [1,6,9] of 
+        true ->
+            tree(function,
+                 #func{name = update_ann({syntax_path, function_name}, Name), 
+                           clauses = [update_ann({syntax_path, function_clause}, C)
+                                      ||C<-Clauses]});
+        _ -> 
+            tree(function,
+                 #function{name = update_ann({syntax_path, function_name}, Name), 
+                           clauses = [update_ann({syntax_path, function_clause}, C)
+                                      ||C<-Clauses]})
+    end.
 
 revert_function(Node) ->
     Node1 = remove_function_clause(Node),
@@ -3136,7 +3147,13 @@ remove_function_clause(Node) ->
 function_name(Node) ->
     case unwrap(Node) of
       {function, Pos, Name, _, _} -> set_pos(atom(Name), Pos);
-      Node1 -> (data(Node1))#function.name
+      Node1 -> 
+            case syntax_tools_vsn() >= [1,6,9] of 
+                true ->
+                    (data(Node1))#func.name;
+                _ ->
+                    (data(Node1))#function.name
+            end
     end.
 
 %% =====================================================================
@@ -3154,7 +3171,13 @@ function_name(Node) ->
 function_clauses(Node) ->
     case unwrap(Node) of
       {function, _, _, _, Clauses} -> Clauses;
-      Node1 -> (data(Node1))#function.clauses
+      Node1 -> 
+            case syntax_tools_vsn() >= [1,6,9] of 
+                true ->
+                    (data(Node1))#func.clauses;
+                false ->
+                    (data(Node1))#function.clauses
+            end
     end.
 %%=============================================
 %% Added by HL;
@@ -3355,8 +3378,12 @@ unfold_try_clause({clause, Pos,
 	true ->  {clause, Pos, [V], Guard, Body}; 
 	false -> {clause, Pos, [class_qualifier({atom, Pos1, throw}, V)], Guard, Body}
     end;
-	
-unfold_try_clause({clause, Pos, [{tuple, _, [C, V, _]}],
+
+unfold_try_clause({clause, Pos, [{tuple, _, [C, V,_]}],
+ 		   Guard, Body}) ->
+     {clause, Pos, [class_qualifier(C, V)], Guard, Body};
+
+unfold_try_clause({clause, Pos, [{tuple, _, [C, V]}],
 		   Guard, Body}) ->
     {clause, Pos, [class_qualifier(C, V)], Guard, Body}.
 
@@ -6540,7 +6567,23 @@ default_literals_vars(Node, Value) ->
 	_  -> Node      
     end.
 
- 
+
+syntax_tools_vsn() -> 
+    Dir=code:lib_dir(syntax_tools),
+    Prefix=lists:takewhile(fun(C)-> C/=$- end, lists:reverse(Dir)),
+    syntax_tools_vsn_nums(lists:reverse(Prefix),[]).
+   
+    
+syntax_tools_vsn_nums([], Nums) -> lists:reverse(Nums);
+syntax_tools_vsn_nums(Str, Nums) ->
+    {Prefix, Str1}=lists:splitwith(fun(C)-> C/=$. end, Str),
+    case Str1 of 
+        [] -> lists:reverse([list_to_integer(Prefix)|Nums]);
+        _ ->
+            syntax_tools_vsn_nums(tl(Str1), [list_to_integer(Prefix)|Nums])
+    end.
+                              
+
 %%TODO:
 %% Add support for bc (binary comprehension?).
 %% eg. `<< <<X:1>> || X <- List >>'.
