@@ -30,7 +30,7 @@
 %%
 %% =====================================================================
 
-%% @copyright 2006-2011 Huiqing Li, Simon Thompson
+%% @copyright 2006-2012 Huiqing Li, Simon Thompson
 %%
 %% @author Huiqing Li, Simon Thompson
 %%   [http://www.cs.kent.ac.uk/projects/wrangler]
@@ -40,7 +40,7 @@
 %% @doc This module describes the refactorings that are currently supported by Wrangler.
 %%     The refactoring functions listed in this module are NOT supposed to be run in an 
 %%     Erlang shell. Interface for refactorings that can be run in an Erlang shell are 
-%%     documented in module <a href="wrangler_api.html">wrangler_api</a>. 
+%%     documented in module <a href="api_wrangler.html">api_wrangler</a>. 
 -module(wrangler_refacs).
 
 -export([rename_var/7, 
@@ -125,9 +125,9 @@
 	 inline_var_eclipse/5, inline_var_eclipse_1/6,
          get_var_name_eclipse/5, get_fun_name_eclipse/5,
 	 run_refac_eclipse/2, input_par_prompts_eclipse/1,
-     apply_changes_eclipse/3, load_callback_mod_eclipse/2,
+         apply_changes_eclipse/3, load_callback_mod_eclipse/2,
 	 input_par_prompts_c_eclipse/1, init_composite_refac_eclipse/2,
-     get_next_command_eclipse/1, 
+         get_next_command_eclipse/1, 
 	 get_user_refactorings/1, load_user_refactorings/1
 	]).
  
@@ -138,43 +138,45 @@
 
 -export([init_eclipse/0]).
 
+-compile(export_all).
+
 -include("../include/wrangler_internal.hrl").
 
--type(context():: emacs | composite_emacs).
+-type(context():: emacs |composite_emacs |command).
 
 %% ====================================================================================================
 %% @doc get all user refactoring modules (gen_refac and gen_composite_refac)
 
 get_user_refactorings(Modules) ->
 	Refacs = lists:foldl(fun(Module, Acc) ->
-						  Attrs = proplists:get_value(attributes, apply(list_to_atom(Module), module_info, [])),
-						  Behs = case proplists:get_value(behaviour, Attrs) of
-							 		 undefined ->
-										  case proplists:get_value(behavior, Attrs) of
-									 		 undefined ->
-												  undefined;
-									 		 Beh ->
-										  		  Beh
-								  		  end;
-						  	  	     Beh ->
-								 	  	  Beh
-						  		 end,
-						  case Behs of
-							  undefined ->
-								  Acc;
-							  _ ->
-								  case { lists:member(gen_refac, Behs), lists:member(gen_composite_refac, Behs)} of
-							  			{true, _} ->
-								  			[{gen_refac, list_to_atom(Module)} |Acc];
-							  			{_, true} ->
-								  			[{gen_composite_refac, list_to_atom(Module)} | Acc];
-							  			_ ->
-								  			Acc
-						  		  end
-						  end
-				  end, [], Modules),
-	[{gen_refac, proplists:append_values(gen_refac, Refacs)},
-	 {gen_composite_refac, proplists:append_values(gen_composite_refac, Refacs)}].
+                                     Attrs = proplists:get_value(attributes, apply(list_to_atom(Module), module_info, [])),
+                                     Behs = case proplists:get_value(behaviour, Attrs) of
+                                                undefined ->
+                                                    case proplists:get_value(behavior, Attrs) of
+                                                        undefined ->
+                                                            undefined;
+                                                        Beh ->
+                                                            Beh
+                                                    end;
+                                                Beh ->
+                                                    Beh
+                                            end,
+                                     case Behs of
+                                         undefined ->
+                                             Acc;
+                                         _ ->
+                                             case { lists:member(gen_refac, Behs), lists:member(gen_composite_refac, Behs)} of
+                                                 {true, _} ->
+                                                     [{gen_refac, list_to_atom(Module)} |Acc];
+                                                 {_, true} ->
+                                                     [{gen_composite_refac, list_to_atom(Module)} | Acc];
+                                                 _ ->
+                                                     Acc
+                                             end
+                                     end
+                             end, [], Modules),
+    [{gen_refac, proplists:append_values(gen_refac, Refacs)},
+     {gen_composite_refac, proplists:append_values(gen_composite_refac, Refacs)}].
 
 
 %% ====================================================================================================
@@ -185,27 +187,31 @@ get_user_refactorings(Modules) ->
 apply_changes_eclipse(Module, Args, CandsNotToChange) ->
 	gen_refac:apply_changes(Module, Args, CandsNotToChange).
 
+%%@private
 -spec(run_refac_eclipse(Module::module()|string()|tuple(), Args::[term()])->
              {ok, string()} | {change_set, [{string(), string()}], module(), tuple()}|
              {error, term()}).
 run_refac_eclipse(ModName, Args) ->
 	gen_refac:run_refac(ModName,Args, eclipse).
 
--spec(input_par_prompts_eclipse(CallBackMod::module()) -> [string()]).
+%%@private
+-spec(input_par_prompts_eclipse(CallBackMod::module()) -> {ok, [string()]}).
 input_par_prompts_eclipse(CallBackMod) ->
 	gen_refac:input_par_prompts(CallBackMod).
 
 %% ====================================================================================================
 %% @doc gen_composite_refac refactorings - delegate functions in order to achieve more clear API (especially for Eclipse)
--spec(input_par_prompts_c_eclipse(CallBackMod::module()) -> [string()]).
+%%@private
+%%-spec(input_par_prompts_c_eclipse(CallBackMod::module()) -> [string()]).
 input_par_prompts_c_eclipse(CallBackMod) ->
 	gen_composite_refac:input_par_prompts(CallBackMod).
 
+%%@private
 -spec(init_composite_refac_eclipse(Module::module()|string()|tuple(), Args::[term()])->
 	{ok,pid()} | ignore |{error, term()}).
 init_composite_refac_eclipse(ModName, Args) ->
 	gen_composite_refac:init_composite_refac(ModName, Args).
-
+%%@private
 get_next_command_eclipse(PrevResult) ->
 	case gen_composite_refac:get_next_command(PrevResult) of
 		{ok, none, _ChangedFiles, [error, Reason]} ->
@@ -226,20 +232,18 @@ get_next_command_eclipse(PrevResult) ->
 
 %% ====================================================================================================
 %% @doc load new callback module (ad hoc refactorings)
--spec(load_callback_mod_eclipse(Module::module(), Path::string()) ->
-	ok | {error, Reason::term()}).
+%%@private
 load_callback_mod_eclipse(Module, Path) ->
-	code:add_patha(Path),
-	code:purge(list_to_atom(Module)),
-	case code:load_file(list_to_atom(Module)) of
-		{module, Module} ->
- 				ok;
-		Error ->
-				Error	
-	end.
+    code:add_patha(Path),
+    code:purge(list_to_atom(Module)),
+    case code:load_file(list_to_atom(Module)) of
+        {module, Module} ->
+            ok;
+        Error ->
+            Error	
+    end.
 
-%% @doc load user's own refactorings from my_gen_refac
--spec(load_user_refactorings(Path::string()) -> ok).
+%%@private
 load_user_refactorings(Path) ->
 	MyRefacs = filename:join(Path, "my_gen_refac"),
 	MyCRefacs = filename:join(Path, "my_gen_composite_refac"),
@@ -254,12 +258,12 @@ load_from_dir(Dir) ->
 	case file:list_dir(Dir) of
 		{ok, Filenames} ->
 			lists:foreach(fun(Name) ->
-								  code:load_file(list_to_atom(filename:basename(Name, ".beam")))
-						  end, Filenames);
-		_ ->
-			ok
+                                              code:load_file(list_to_atom(filename:basename(Name, ".beam")))
+                                      end, Filenames);
+            _ ->
+                ok
 	end.
-	
+
 
 %% ====================================================================================================
 %% @doc Rename a variable.
@@ -288,6 +292,7 @@ rename_var_eclipse(FileName, Line, Col, NewName, SearchPaths, TabWidth) ->
     try_refac(refac_rename_var, rename_var_eclipse, [FileName, Line, Col, NewName, SearchPaths, TabWidth]).
 
 %%-spec get_var_name_eclipse/5::(filename(), integer(), integer(), [dir()], integer()) -> string().
+%%@private
 get_var_name_eclipse(FileName, Line, Col, SearchPaths, TabWidth) ->
     try_refac(refac_rename_var, get_var_name, [FileName, Line, Col, SearchPaths, TabWidth]).
 
@@ -312,7 +317,7 @@ get_var_name_eclipse(FileName, Line, Col, SearchPaths, TabWidth) ->
 rename_fun(ModOrFileName, {OldFunName, Arity}, NewFunName, SearchPaths, Editor, TabWidth) ->
     try_refac(refac_rename_fun, rename_fun_by_name, 
               [ModOrFileName, OldFunName, Arity, NewFunName, SearchPaths, Editor, TabWidth]).
-
+%%@private
 -spec(rename_fun/7::(string(), integer(), integer(), string(), [dir()], context(), integer()) ->
 	     {error, string()} |{warning, string()}| {ok, [filename()]}).
 rename_fun(FileName, Line, Col, NewName, SearchPaths, Context, TabWidth) ->
@@ -338,6 +343,7 @@ rename_fun_1_eclipse(FileName, Line, Col, NewName, SearchPaths, TabWidth) ->
     try_refac(refac_rename_fun, rename_fun_1_eclipse, [FileName, Line, Col, NewName, SearchPaths, TabWidth]).
     
 
+%%@private
 %%-spec(get_fun_name_eclipse/5::(string(), integer(), integer(), [dir()], integer()) ->
 %% string().
 get_fun_name_eclipse(FileName, Line, Col, SearchPaths, TabWidth) ->
@@ -886,11 +892,11 @@ register_pid(FileName, _Start=[SLn, SCol], _End=[ELn, ECol], RegName, SearchPath
 	     {error, string()} | {ok, [filename()]}).
 tuple_funpar(FileName, _StartLoc=[SLn, SCol], _EndLoc=[ELn, ECol],SearchPaths, Context, TabWidth) ->
     try_refac(refac_tuple, tuple_funpar, [FileName, {SLn, SCol}, {ELn, ECol}, SearchPaths, Context, TabWidth]).
-
+%%@private
 tuple_funpar_1(FileName, _StartLoc=[SLn, SCol], _EndLoc=[ELn, ECol], SearchPaths, Context, TabWidth) ->
     try_refac(refac_tuple, tuple_funpar_1, [FileName, {SLn, SCol}, {ELn, ECol}, SearchPaths, Context, TabWidth]).
 
-
+%%@private
 tuple_args(ModOrFile, FA, Index1,Index2, SearchPaths, Context, TabWidth)->
     try_refac(refac_tuple, tuple_args, [ModOrFile, FA, Index1, Index2, SearchPaths, Context, TabWidth]).
 
@@ -1080,6 +1086,7 @@ intro_new_var_eclipse(FileName, Start, End, NewVarName, SearchPaths, TabWidth) -
 inline_var(FName, Line, Col, SearchPaths, Context, TabWidth) ->
     try_refac(refac_inline_var, inline_var, [FName, Line, Col, SearchPaths, Context, TabWidth]).
 
+%%@private
 -spec (inline_var_1/8::(FileName::filename(), Line::integer(), Col::integer(), 
 				Candidates::[{{StartLine::integer(), StartCol::integer()},{EndLine::integer(), EndCol::integer()}}], 
 				SearchPaths::[dir()], Editor::context(), TabWidth::integer(), LogMsg::string()) ->
@@ -1415,7 +1422,7 @@ partition_exports_eclipse(File, DistThreshold, SearchPaths, TabWidth)->
     try_refac(wrangler_modularity_inspection, partition_exports_eclipse,
 	      [File, DistThreshold, SearchPaths, TabWidth]).
 
-
+%%@private
 -spec(do_api_migration(Scope::[filename()|dir()],CallBackMod::string(), SearchPaths::[filename()|dir()], 
                        Editor::context(), TabWidth::integer()) -> 
              	 {error, string()}| {ok, [{filename(), filename(), string()}]}).   
@@ -1424,6 +1431,7 @@ do_api_migration(Scope, CallBackMod, SearchPaths, Editor, TabWidth)->
                                                       SearchPaths, Editor, TabWidth]).
 
 
+%%@private
 -spec(generate_rule_based_api_migration_mod(FileName::filename(), 
                                             NewModName::string()|atom()) ->
              {ok, filename()} | {error, term()}).
@@ -1476,4 +1484,73 @@ get_log_msg() ->
 	    Msg1++Msg2 ++ lists:flatten(WarningMsg)
     end.
  
- 
+%%@doc Remove an operation input elememt.
+%%<p>
+%%   This refactoring can be used when a parameter has been removed from a
+%%   WS operation. To invoke this refactoring, point the cursor to the parameter to 
+%%   be removed in the wrapper function for this operation, then select  
+%%   'remove a WS operation argument' from the 'Refactorings for QuickCheck' sub-menu.
+%%   Note that This refactoring forces the removal of the parameter, hence could 
+%%   lead to code that does not compile. This refactoring does not work with 
+%%   ```eqc_statem''' group syntax yet.
+%%</p>
+rm_op_arg(FileName, OpName, Index, SearchPaths, Editor, TabWidth) ->
+    try_refac(refac_rm_op_arg, rm_op_arg, 
+              [FileName, OpName, Index, SearchPaths, Editor, TabWidth]).
+
+%%@doc Add an input element to a WS operation.
+%% <p>
+%% This refactoring can be used when a new parameter has been added to a
+%% WS operation. To invoke this refactoring, point the cursor to wrapper 
+%% function for this operation, select 'add a WS operation argument' 
+%% from the 'Refactorings for QuickCheck' sub-menu, the you will be prompted
+%% to input the new parameter name in the mini-buffer.
+%% This refactoring does not work with ```eqc_statem''' group syntax yet.
+%% </p>
+add_op_arg(FileName, OpName, Arity, NewArgName, Index, NewArgGen, SearchPaths, Editor, TabWidth) ->
+    try_refac(refac_add_op_arg, add_op_arg, 
+              [FileName, OpName, Arity, NewArgName, Index, NewArgGen, SearchPaths, Editor, TabWidth]).
+
+%%@doc Add a WS operation.
+%%<p>
+%%   This refactoring can be used when a new WS operation has been added to a WS. 
+%%   To invoke this refactoring, select 'add a WS operation' from the 
+%%   'Refactorings for QuickCheck' sub-menu, then you will be prompted to input the 
+%%   name of the operation and its parameters. This refactoring does not work with 
+%%   ```eqc_statem''' group syntax yet
+%%</p>
+add_op(FileName, OpName, Args,SearchPaths, Editor, TabWidth) ->
+    try_refac(refac_add_op, add_op, 
+              [FileName, OpName, concat_args(Args), SearchPaths, Editor, TabWidth]).
+
+concat_args([]) ->
+    "";
+concat_args([A]) ->
+    A;
+concat_args([A|As]) ->
+    A++","++concat_args(As).
+
+%%@doc Remove an operation.
+%%<p>
+%%   This refactoring can be used when an operation has been removed from a
+%%   WS. To invoke this refactoring, point the cursor to the wrapper function of 
+%%   operation to be removed, then select 'remove a WS operation' from the 
+%%   'Refactorings for QuickCheck' sub-menu.
+%%    This refactoring does not work with ```eqc_statem''' group syntax yet.
+%%</p>
+rm_op(FileName, OpName, Arity, SearchPaths, Editor, TabWidth) ->
+    try_refac(refac_rm_op, rm_op, 
+              [FileName, OpName, Arity, SearchPaths, Editor, TabWidth]).
+
+%%@doc Re-order operation parameters.
+%%<p>
+%%  This refactoring can be used when the sequence of input elements have 
+%%  been re-ordered. To invoke this refactoring, point the cursor to the 
+%%  wrapper function of the operation, select `re-order WS operation parameters'
+%%  from the `Refactorings for QuickCheck' sub-menu, then you will be prompted
+%%  to input the new order of parameters using the indexes of current parameters.
+%%  e.g. to reverse the order of three parameters, you could input: 3,2,1.
+%%</p>
+swap_op_args(FileName, OpName, Arity, NewOrder, SearchPaths, Editor, TabWidth) ->
+    try_refac(refac_swap_op_args, swap_op_args, 
+              [FileName, OpName, Arity, NewOrder, SearchPaths, Editor, TabWidth]).

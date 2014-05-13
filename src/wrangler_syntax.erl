@@ -139,9 +139,24 @@
 	 list_head/1, list_length/1, list_prefix/1,
 	 list_suffix/1, list_tail/1, macro/1, macro/2,
 	 macro_arguments/1, macro_name/1, make_tree/2,
-	 match_expr/2, match_expr_body/1, match_expr_pattern/1,
+         map_expr/1,
+         map_expr/2,
+         map_expr_argument/1,
+         map_expr_fields/1,
+         map_field_assoc/2,
+         map_field_assoc_name/1,
+         map_field_assoc_value/1,
+         map_field_exact/2,
+         map_field_exact_name/1,
+         map_field_exact_value/1,
+         match_expr/2, match_expr_body/1, match_expr_pattern/1,
 	 meta/1, module_qualifier/2, module_qualifier_argument/1,
-	 module_qualifier_body/1, nil/0, normalize_list/1,
+	 module_qualifier_body/1,
+         named_fun_expr/2,
+	 named_fun_expr_arity/1,
+	 named_fun_expr_clauses/1,
+	 named_fun_expr_name/1,
+         nil/0, normalize_list/1,
 	 operator/1, operator_literal/1, operator_name/1,
 	 parentheses/1, parentheses_body/1,
          fake_parentheses/1, fake_parentheses_body/1,
@@ -274,9 +289,11 @@
 		  attr = #attr{} ,
 		  tree           }).
 
-%% =====================================================================
+-type syntaxTree() :: #tree{} | #wrapper{} | erl_parse().
 
-%%-type syntaxTree() :: #tree{} | #wrapper{} | tuple(). % XXX: refine
+-type erl_parse() :: erl_parse:abstract_form() | erl_parse:abstract_expr().
+%% The representation built by the Erlang standard library parser
+%% `erl_parse'. This is a subset of the {@link syntaxTree()} type.
 
 %% =====================================================================
 %%
@@ -442,8 +459,9 @@ type(Node) ->
       {'catch', _, _} -> catch_expr;
       {'cond', _, _} -> cond_expr;
       {'fun', _, {clauses, _}} -> fun_expr;
+      {named_fun, _, _, _} -> named_fun_expr;
       {'fun', _, {function, _, _}} -> implicit_fun;
-      {'fun', _, {function, _, _, _}} -> implicit_fun;   %% Added by Huiqing Li			      
+      {'fun', _, {function, _, _, _}} -> implicit_fun; %% Added by HL
       {'if', _, _} -> if_expr;
       {'receive', _, _, _, _} -> receive_expr;
       {'receive', _, _} -> receive_expr;
@@ -462,6 +480,10 @@ type(Node) ->
       {match, _, _, _} -> match_expr;
       {op, _, _, _, _} -> infix_expr;
       {op, _, _, _} -> prefix_expr;
+      {map,_,_} -> map_expr;
+      {map, _, _, _} -> map_expr;
+      {map_field_assoc,_,_,_} -> map_field_assoc;
+      {map_field_exact,_,_,_} -> map_field_exact;
       {'query', _, _} -> query_expr;
       {record, _, _, _, _} -> record_expr;
       {record, _, _, _} -> record_expr;
@@ -479,6 +501,7 @@ type(Node) ->
       {remote_type, _, _} -> remote_type;
       {tuple, _, _} -> tuple;
       {fake_parentheses, _} -> fake_parentheses;
+      {paren_type, _, _} -> paren_type;
         _ -> erlang:error({badarg, Node})
     end.
 
@@ -1711,6 +1734,208 @@ atom_name(Node) -> atom_to_list(atom_value(Node)).
 
 atom_literal(Node) ->
     io_lib:write_atom(atom_value(Node)).
+
+%% =====================================================================
+%% =====================================================================
+%% @equiv map_expr(none, Fields)
+
+-spec map_expr([syntaxTree()]) -> syntaxTree().
+
+map_expr(Fields) ->
+    map_expr(none, Fields).
+
+
+%% =====================================================================
+%% @doc Creates an abstract map expression. If `Fields' is
+%% `[F1, ..., Fn]', then if `Argument' is `none', the result represents
+%% "<code>#{<em>F1</em>, ..., <em>Fn</em>}</code>",
+%% otherwise it represents
+%% "<code><em>Argument</em>#{<em>F1</em>, ..., <em>Fn</em>}</code>".
+%%
+%% @see map_expr/1
+%% @see map_expr_argument/1
+%% @see map_expr_fields/1
+%% @see map_field_assoc/2
+%% @see map_field_exact/2
+
+-record(map_expr, {argument :: 'none' | syntaxTree(),
+                   fields   :: [syntaxTree()]}).
+
+%% `erl_parse' representation:
+%%
+%% {map, Pos, Fields}
+%% {map, Pos, Argument, Fields}
+
+-spec map_expr('none' | syntaxTree(), [syntaxTree()]) -> syntaxTree().
+
+map_expr(Argument, Fields) ->
+    tree(map_expr, #map_expr{argument = Argument, fields = Fields}).
+
+revert_map_expr(Node) ->
+    Pos = get_pos(Node),
+    Argument = map_expr_argument(Node),
+    Fields = map_expr_fields(Node),
+    case Argument of
+        none ->
+            {map, Pos, Fields};
+        _ ->
+            {map, Pos, Argument, Fields}
+    end.
+
+
+%% =====================================================================
+%% @doc Returns the argument subtree of a `map_expr' node, if any. If `Node'
+%% represents "<code>#{...}</code>", `none' is returned.
+%% Otherwise, if `Node' represents "<code><em>Argument</em>#{...}</code>",
+%% `Argument' is returned.
+%%
+%% @see map_expr/2
+
+-spec map_expr_argument(syntaxTree()) -> 'none' | syntaxTree().
+
+map_expr_argument(Node) ->
+    case unwrap(Node) of
+        {map, _, _} ->
+            none;
+        {map, _, Argument, _} ->
+            Argument;
+        Node1 ->
+            (data(Node1))#map_expr.argument
+    end.
+
+
+%% =====================================================================
+%% @doc Returns the list of field subtrees of a `map_expr' node.
+%%
+%% @see map_expr/2
+
+-spec map_expr_fields(syntaxTree()) -> [syntaxTree()].
+
+map_expr_fields(Node) ->
+    case unwrap(Node) of
+        {map, _, Fields} ->
+            Fields;
+        {map, _, _, Fields} ->
+            Fields;
+        Node1 ->
+            (data(Node1))#map_expr.fields
+    end.
+
+
+%% =====================================================================
+%% @doc Creates an abstract map assoc field. The result represents
+%% "<code><em>Name</em> => <em>Value</em></code>".
+%%
+%% @see map_field_assoc_name/1
+%% @see map_field_assoc_value/1
+%% @see map_expr/2
+
+-record(map_field_assoc, {name :: syntaxTree(), value :: syntaxTree()}).
+
+%% `erl_parse' representation:
+%%
+%% {map_field_assoc, Pos, Name, Value}
+
+-spec map_field_assoc(syntaxTree(), syntaxTree()) -> syntaxTree().
+
+map_field_assoc(Name, Value) ->
+    tree(map_field_assoc, #map_field_assoc{name = Name, value = Value}).
+
+revert_map_field_assoc(Node) ->
+    Pos = get_pos(Node),
+    Name = map_field_assoc_name(Node),
+    Value = map_field_assoc_value(Node),
+    {map_field_assoc, Pos, Name, Value}.
+
+
+%% =====================================================================
+%% @doc Returns the name subtree of a `map_field_assoc' node.
+%%
+%% @see map_field_assoc/2
+
+-spec map_field_assoc_name(syntaxTree()) -> syntaxTree().
+
+map_field_assoc_name(Node) ->
+    case Node of
+        {map_field_assoc, _, Name, _} ->
+            Name;
+        _ ->
+            (data(Node))#map_field_assoc.name
+    end.
+
+
+%% =====================================================================
+%% @doc Returns the value subtree of a `map_field_assoc' node.
+%%
+%% @see map_field_assoc/2
+
+-spec map_field_assoc_value(syntaxTree()) -> syntaxTree().
+
+map_field_assoc_value(Node) ->
+    case Node of
+        {map_field_assoc, _, _, Value} ->
+            Value;
+        _ ->
+            (data(Node))#map_field_assoc.value
+    end.
+
+
+%% =====================================================================
+%% @doc Creates an abstract map exact field. The result represents
+%% "<code><em>Name</em> := <em>Value</em></code>".
+%%
+%% @see map_field_exact_name/1
+%% @see map_field_exact_value/1
+%% @see map_expr/2
+
+-record(map_field_exact, {name :: syntaxTree(), value :: syntaxTree()}).
+
+%% `erl_parse' representation:
+%%
+%% {map_field_exact, Pos, Name, Value}
+
+-spec map_field_exact(syntaxTree(), syntaxTree()) -> syntaxTree().
+
+map_field_exact(Name, Value) ->
+    tree(map_field_exact, #map_field_exact{name = Name, value = Value}).
+
+revert_map_field_exact(Node) ->
+    Pos = get_pos(Node),
+    Name = map_field_exact_name(Node),
+    Value = map_field_exact_value(Node),
+    {map_field_exact, Pos, Name, Value}.
+
+
+%% =====================================================================
+%% @doc Returns the name subtree of a `map_field_exact' node.
+%%
+%% @see map_field_exact/2
+
+-spec map_field_exact_name(syntaxTree()) -> syntaxTree().
+
+map_field_exact_name(Node) ->
+    case Node of
+        {map_field_exact, _, Name, _} ->
+            Name;
+        _ ->
+            (data(Node))#map_field_exact.name
+    end.
+
+
+%% =====================================================================
+%% @doc Returns the value subtree of a `map_field_exact' node.
+%%
+%% @see map_field_exact/2
+
+-spec map_field_exact_value(syntaxTree()) -> syntaxTree().
+map_field_exact_value(Node) ->
+    case Node of
+        {map_field_exact, _, _, Value} ->
+            Value;
+        _ ->
+            (data(Node))#map_field_exact.value
+    end.
+
 
 %% =====================================================================
 %% @spec tuple(Elements::[syntaxTree()]) -> syntaxTree()
@@ -5370,11 +5595,14 @@ implicit_fun_name(Node) ->
 	{'fun', Pos, {function, Atom, Arity}} ->
 	    arity_qualifier(set_pos(atom(Atom), Pos),
 			    set_pos(integer(Arity), Pos));
-	{'fun', Pos, {function, Module, Atom, Arity}} ->
+	{'fun', Pos, {function, Module, Atom, Arity}} 
+          when is_atom(Atom), is_integer(Arity) ->
 	    module_qualifier(set_pos(atom(Module), Pos),
 			     arity_qualifier(
 			       set_pos(atom(Atom), Pos),
 			       set_pos(integer(Arity), Pos)));
+	{'fun', _Pos, {function, Module, Atom, Arity}} ->
+            module_qualifier(Module, arity_qualifier(Atom, Arity));
 	Node1 ->
 	    data(Node1)
     end.
@@ -5451,6 +5679,114 @@ fun_expr_clauses(Node) ->
 
 fun_expr_arity(Node) ->
     length(clause_patterns(hd(fun_expr_clauses(Node)))).
+
+
+%% =====================================================================
+%% @doc Creates an abstract named fun-expression. If `Clauses' is
+%% `[C1, ..., Cn]', the result represents "<code>fun
+%% <em>Name</em> <em>C1</em>; ...; <em>Name</em> <em>Cn</em> end</code>".
+%% More exactly, if each `Ci' represents
+%% "<code>(<em>Pi1</em>, ..., <em>Pim</em>) <em>Gi</em> -> <em>Bi</em></code>",
+%% then the result represents
+%% "<code>fun <em>Name</em>(<em>P11</em>, ..., <em>P1m</em>) <em>G1</em> ->
+%% <em>B1</em>; ...; <em>Name</em>(<em>Pn1</em>, ..., <em>Pnm</em>)
+%% <em>Gn</em> -> <em>Bn</em> end</code>".
+%%
+%% @see named_fun_expr_name/1
+%% @see named_fun_expr_clauses/1
+%% @see named_fun_expr_arity/1
+
+-record(named_fun_expr, {name :: syntaxTree(), clauses :: [syntaxTree()]}).
+
+%% type(Node) = named_fun_expr
+%% data(Node) = #named_fun_expr{name :: Name, clauses :: Clauses}
+%%
+%%	Name = syntaxTree()
+%%	Clauses = [syntaxTree()]
+%%
+%%	(See `function' for notes; e.g. why the arity is not stored.)
+%%
+%% `erl_parse' representation:
+%%
+%% {named_fun, Pos, Name, Clauses}
+%%
+%%	Clauses = [Clause] \ []
+%%	Clause = {clause, ...}
+%%
+%%	See `clause' for documentation on `erl_parse' clauses.
+
+-spec named_fun_expr(syntaxTree(), [syntaxTree()]) -> syntaxTree().
+
+named_fun_expr(Name, Clauses) ->
+    tree(named_fun_expr, #named_fun_expr{name = Name, clauses = Clauses}).
+
+revert_named_fun_expr(Node) ->
+    Pos = get_pos(Node),
+    Name = named_fun_expr_name(Node),
+    Cs = named_fun_expr_clauses(Node),
+    Clauses = [revert_clause(C) || C <- Cs],
+    case type(Name) of
+	variable ->
+            {named_fun, Pos, variable_name(Name), Clauses};
+	_ ->
+	    Node
+    end.
+
+
+%% =====================================================================
+%% @doc Returns the name subtree of a `named_fun_expr' node.
+%%
+%% @see named_fun_expr/2
+
+-spec named_fun_expr_name(syntaxTree()) -> syntaxTree().
+
+named_fun_expr_name(Node) ->
+    case unwrap(Node) of
+	{named_fun, _Pos, Name, Cs} ->
+            Cs = named_fun_expr_clauses(Node),
+            NamePos = get_pos(hd(Cs)),
+	    %%set_pos(variable(Name), NamePos);
+            {var, NamePos, Name};
+	Node1 ->
+	    (data(Node1))#named_fun_expr.name
+    end.
+
+
+%% =====================================================================
+%% @doc Returns the list of clause subtrees of a `named_fun_expr' node.
+%%
+%% @see named_fun_expr/2
+
+-spec named_fun_expr_clauses(syntaxTree()) -> [syntaxTree()].
+
+named_fun_expr_clauses(Node) ->
+    case unwrap(Node) of
+	{named_fun, _, _, Clauses} ->
+	    Clauses;
+	Node1 ->
+	    (data(Node1))#named_fun_expr.clauses
+    end.
+
+
+%% =====================================================================
+%% @doc Returns the arity of a `named_fun_expr' node. The result is
+%% the number of parameter patterns in the first clause of the
+%% named fun-expression; subsequent clauses are ignored.
+%%
+%% An exception is thrown if `named_fun_expr_clauses(Node)'
+%% returns an empty list, or if the first element of that list is not a
+%% syntax tree `C' of type `clause' such that
+%% `clause_patterns(C)' is a nonempty list.
+%%
+%% @see named_fun_expr/2
+%% @see named_fun_expr_clauses/1
+%% @see clause/3
+%% @see clause_patterns/1
+
+-spec named_fun_expr_arity(syntaxTree()) -> arity().
+named_fun_expr_arity(Node) ->
+    length(clause_patterns(hd(named_fun_expr_clauses(Node)))).
+
 
 %% =====================================================================
 %% @spec parentheses(Body::syntaxTree()) -> syntaxTree()
@@ -5788,8 +6124,16 @@ revert_root(Node) ->
 		revert_list(Node);
 	     list_comp -> 
 		revert_list_comp(Node);
+             map_expr ->
+                revert_map_expr(Node);
+             map_field_assoc ->
+                revert_map_field_assoc(Node);
+             map_field_exact ->
+                revert_map_field_exact(Node);
 	     match_expr -> 
 		revert_match_expr(Node);
+             named_fun_expr ->
+                revert_named_fun_expr(Node);
 	     module_qualifier -> 
 		revert_module_qualifier(Node);
 	     nil -> 
@@ -5820,7 +6164,7 @@ revert_root(Node) ->
 		revert_try_expr(Node);
 	     tuple -> 
 		revert_tuple(Node);
-	     underscore ->
+             underscore ->
 		revert_underscore(Node);
 	     variable -> 
 		revert_variable(Node);
@@ -5996,17 +6340,33 @@ subtrees(T) ->
 		  S -> [list_prefix(T), [S]]
 		end;
 	    list_comp ->
-		[[list_comp_template(T)], list_comp_body(T)];
-	    macro ->
-		case macro_arguments(T) of
-		  none -> [[macro_name(T)]];
-		  As -> [[macro_name(T)], As]
+                    [[list_comp_template(T)], list_comp_body(T)];
+            macro ->
+                    case macro_arguments(T) of
+                    none -> [[macro_name(T)]];
+                    As -> [[macro_name(T)], As]
 		end;
-	    match_expr ->
+            map_expr ->
+                    case map_expr_argument(T) of
+                        none ->
+                            [map_expr_fields(T)];
+                        V ->
+                            [[V], map_expr_fields(T)]
+                    end;
+            map_field_assoc ->
+                    [[map_field_assoc_name(T)],
+                     [map_field_assoc_value(T)]];
+            map_field_exact ->
+                    [[map_field_exact_name(T)],
+                     [map_field_exact_value(T)]];
+            match_expr ->
 		[[match_expr_pattern(T)], [match_expr_body(T)]];
 	    module_qualifier ->
 		[[module_qualifier_argument(T)],
 		 [module_qualifier_body(T)]];
+            named_fun_expr ->
+                 [[named_fun_expr_name(T)],
+                   named_fun_expr_clauses(T)];
 	    parentheses -> [[parentheses_body(T)]];
             fake_parentheses -> [[fake_parentheses_body(T)]];
 	    prefix_expr ->
@@ -6050,7 +6410,7 @@ subtrees(T) ->
 	    try_expr ->
 		[try_expr_body(T), try_expr_clauses(T),
 		 try_expr_handlers(T), try_expr_after(T)];
-	    tuple -> [tuple_elements(T)];
+            tuple -> [tuple_elements(T)];
 	    type -> [];
             empty_node -> [];
 		_ ->[]  %% added by huiqing li to handle {wrapper, [] ...} which could be returned from Elisp.
@@ -6133,6 +6493,7 @@ make_tree(list_comp, [[T], B]) -> list_comp(T, B);
 make_tree(macro, [[N]]) -> macro(N);
 make_tree(macro, [[N], A]) -> macro(N, A);
 make_tree(match_expr, [[P], [E]]) -> match_expr(P, E);
+make_tree(named_fun_expr, [[N], C]) -> named_fun_expr(N, C);
 make_tree(module_qualifier, [[M], [N]]) ->
     module_qualifier(M, N);
 make_tree(fake_parentheses, [[E]]) -> fake_parentheses(E);
@@ -6160,6 +6521,10 @@ make_tree(size_qualifier, [[N], [A]]) ->
     size_qualifier(N, A);
 make_tree(try_expr, [B, C, H, A]) ->
     try_expr(B, C, H, A);
+make_tree(map_expr, [Fs]) -> map_expr(Fs);
+make_tree(map_expr, [[E], Fs]) -> map_expr(E, Fs);
+make_tree(map_field_assoc, [[K], [V]]) -> map_field_assoc(K, V);
+make_tree(map_field_exact, [[K], [V]]) -> map_field_exact(K, V);
 make_tree(tuple, [E]) -> tuple(E);
 make_tree(empty_node, []) -> empty_node(). 
 
@@ -6571,7 +6936,15 @@ default_literals_vars(Node, Value) ->
 syntax_tools_vsn() -> 
     Dir=code:lib_dir(syntax_tools),
     Prefix=lists:takewhile(fun(C)-> C/=$- end, lists:reverse(Dir)),
-    syntax_tools_vsn_nums(lists:reverse(Prefix),[]).
+    try
+        syntax_tools_vsn_nums(lists:reverse(Prefix),[])
+    catch
+        _E1:_E2 -> [1,6,9] %% wrangler couldn't infer the version
+                           %% of syntax tools being used.
+                           %% Just a quick fix here; if the user
+                           %% is using an older version of Erlang,
+                           %% then an upgrade is needed.
+    end.
    
     
 syntax_tools_vsn_nums([], Nums) -> lists:reverse(Nums);

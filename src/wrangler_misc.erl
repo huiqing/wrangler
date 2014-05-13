@@ -927,11 +927,11 @@ exported_vars(Node) ->
 
 exported_vars_1(Node, {StartLoc, EndLoc}) ->
     Fun = fun (N, Acc) ->
-                  case wrangler_syntax:type(Node) of
+                  case wrangler_syntax:type(N) of
                       variable ->
                           Ann = wrangler_syntax:get_ann(N),
                           case lists:keyfind(bound, 1, Ann) of 
-                              {use, Bound} when Bound/=[] ->
+                              {bound, Bound} when Bound/=[] ->
                                   case lists:keyfind(use,1,Ann) of 
                                       {use, Locs} ->
                                           case [L||L<-Locs, L>EndLoc orelse L < StartLoc] of
@@ -1033,7 +1033,7 @@ parse_annotate_expr(ExprStr, StartLoc) when is_integer(StartLoc) ->
     parse_annotate_expr(ExprStr, {StartLoc, 1});
 parse_annotate_expr(ExprStr, StartLoc) when is_tuple(StartLoc) ->
     case wrangler_scan:string(ExprStr, StartLoc) of
-        {ok, Toks, _} ->
+        {ok, Toks, L1} ->
             [T|Ts] = lists:reverse(Toks),
             Toks1 = case T of 
                         {dot, _} -> Toks;
@@ -1041,7 +1041,8 @@ parse_annotate_expr(ExprStr, StartLoc) when is_tuple(StartLoc) ->
                         _ -> Toks++[{dot, 999}]
                     end,
             Toks2 = wrangler_epp_dodger:scan_macros(Toks1,[]),
-            case wrangler_parse:parse_form(Toks2) of 
+            %% case wrangler_parse:parse_form(Toks1) of 
+            case parse_form(Toks1, L1) of  %% keep macros in AST; does this affect other things?
                 {ok, AbsForm} ->
                     case wrangler_syntax:type(AbsForm) of
                         function ->
@@ -1065,7 +1066,7 @@ parse_annotate_expr(ExprStr, StartLoc) when is_tuple(StartLoc) ->
                        {';',_} -> 
                            throw({error, Reason});
                        _ ->
-                           case wrangler_parse:parse_exprs(Toks2) of
+                           case wrangler_parse:parse_exprs(Toks2) of   %% does not work with macros in string.
                                {ok, Exprs} ->
                                    Exprs1 =wrangler_epp_dodger:rewrite_list(Exprs),
                                    Exprs2 = make_tree({block, StartLoc, Exprs1}),
@@ -1094,6 +1095,34 @@ make_tree(Tree) ->
     end.
 
 
+parse_form(Ts, L1) ->
+    case catch {ok, wrangler_epp_dodger:normal_parser(Ts, [])} of
+        {'EXIT', Term} ->
+            {error, {io_error(L1, {unknown, Term}), {start_pos(Ts, L1),end_pos(Ts,L1)}}, L1};
+        {error, Term} ->
+            IoErr = io_error(L1, Term),
+            {error, {IoErr, {start_pos(Ts, L1), end_pos(Ts, L1)}}};
+        {parse_error, IoErr} ->
+            {error, {IoErr, {start_pos(Ts, L1), end_pos(Ts, L1)}}};
+        {parse_error, IoErr, Range} ->
+            {error, {IoErr, Range}};
+        {ok, F} ->
+            {ok, F}
+    end.
+
+io_error(L, Desc) ->
+    {L, ?MODULE, Desc}.
+
+start_pos([T | _Ts], _L) ->
+    element(2, T);
+start_pos([], L) ->
+    L.
+
+
+end_pos([], L) ->
+    L;
+end_pos(Ts, _L) ->
+    element(2, lists:last(Ts)).
 
 %%================================================================
 %%@spec(extend_function_clause(Tree::syntaxTree()) -> syntaxTree()).
@@ -1110,6 +1139,20 @@ extend_function_clause_1(Node, _OtherInfo) ->
         function ->
             Node1=extend_function_clause_2(Node),
             {Node1, true};
+        clause ->
+            Ann = wrangler_syntax:get_ann(Node),
+            case lists:keysearch(syntax_path, 1, Ann) of 
+                {value, {syntax_path, function_clause}} ->
+                    case lists:keyfind(fun_def, 1, Ann) of
+                        {fun_def, {_, FunName, _, _, _}} ->
+                            Node1 = rewrite(Node, wrangler_syntax:function_clause(
+                                                    wrangler_syntax:atom(FunName), Node)),
+                            {Node1, true};
+                        _ ->
+                            {Node, true}
+                    end;
+                _ -> {Node, false}
+            end;
         _ ->
             {Node, false}
     end.

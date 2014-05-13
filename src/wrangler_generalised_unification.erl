@@ -1,4 +1,4 @@
-%% Copyright (c) 2010, Huiqing Li, Simon Thompson
+% Copyright (c) 2010, Huiqing Li, Simon Thompson
 %% All rights reserved.
 %%
 %% Redistribution and use in source and binary forms, with or without
@@ -69,8 +69,7 @@ extended_case_expr_match(TempExp, {ExprArg, ExprCs}, Cond) ->
             false;
         [{true,Subst0}] ->
             case extended_clause_match(TempCs, ExprCs) of 
-                false -> 
-                    false;
+                false -> false;
                 {true, {Subst1, TempCsAcc}} ->
                     Subst = [[{case wrangler_syntax:type(V) of
                                    variable -> wrangler_syntax:variable_name(V);
@@ -116,7 +115,7 @@ extended_clause_match(TempCs, [C|ExprCs], {SubstAcc,TempCsAcc}) ->
 get_a_match_clause([{Index, C}|TempCs], ExpC) ->
     [Pat] = wrangler_syntax:clause_patterns(ExpC),
     FreeVars = api_refac:free_vars(Pat),
-    if FreeVars /=[] ->  %%TODO: check why this is needed!.
+    if FreeVars /=[] -> 
             false;
        true ->
             case wrangler_syntax:type(Pat) of
@@ -241,10 +240,14 @@ unification(Exp1, Exp2) ->
 list_unification_1(Exp1, Exp2)->
     LEs1 = [E||E<-Exp1,is_list(E)],
     LEs2 = [E||E<-Exp2,is_list(E)],
-    case LEs1==[] andalso LEs2==[] andalso 
-        has_meta_list(Exp1) of 
+    case LEs1==[] andalso LEs2==[] of
         false ->
-            list_unification_2(Exp1, Exp2);
+            case  has_meta_list(Exp1) of
+                false ->
+                    list_unification_2(Exp1, Exp2);
+                true ->
+                    list_unification_3(Exp1,Exp2)
+            end;
         true ->
             list_unification_3(Exp1, Exp2)
     end.
@@ -336,8 +339,6 @@ combine_unification_results(Sub1,Sub2) ->
 
 
 
-    
-
 create_sub(T1, T2List)->
     case is_meta_list_variable(T1) of 
         true ->
@@ -376,33 +377,49 @@ create_sub_for_clause(MetaClause, ClauseList) ->
             [false];
         true ->
             T11=case wrangler_syntax:type(MetaClause) of
-            function_clause ->
+                    function_clause ->
                         wrangler_syntax:function_clause(MetaClause);
-            _ -> MetaClause
+                    _ -> MetaClause
                 end,
-            [Pat]= wrangler_syntax:clause_patterns(T11),
             T2List1=[case wrangler_syntax:type(T2) of
                          function_clause ->
                              wrangler_syntax:function_clause(T2);
                          _ -> T2
                      end || T2 <- ClauseList],
             case clause_guard(T11) of
-                [[]] ->
+                [] ->
                     T2Gs=[G2||T2 <- T2List1, G2 <- clause_guard(T2), G2 /= []],
                     case T2Gs of
                         [] ->
                             [Body]= wrangler_syntax:clause_body(T11),
                             T2Pats=[wrangler_syntax:clause_patterns(T2)||T2 <- T2List1],
                             T2Body=[wrangler_syntax:clause_body(T2)||T2 <- T2List1],
+                            [Pat]= wrangler_syntax:clause_patterns(T11),
                             [{true, [{Pat, T2Pats},{Body, T2Body}]}];
                         _ -> [false]
                     end;
                 [[Guard]] ->
                     [Body]= wrangler_syntax:clause_body(T11),
                     T2Pats=[wrangler_syntax:clause_patterns(T2)||T2 <- T2List1],
-                    T2Gs=[G2||T2 <- T2List1, G2 <- clause_guard(T2)],
+                    T2Gs=[clause_guard(T2)||T2 <- T2List1],
                     T2Body=[wrangler_syntax:clause_body(T2)||T2 <- T2List1],
-                    [{true, [{Pat, T2Pats}, {Guard, T2Gs}, {Body, T2Body}]}]
+                    case wrangler_syntax:clause_patterns(T11) of 
+                        [Pat] ->
+                            [{true, [{Pat, T2Pats}, {Guard, T2Gs}, {Body, T2Body}]}];
+                        [] ->
+                            [{true, [{Guard, T2Gs}, {Body, T2Body}]}]
+                    end;
+                 [Guard] ->
+                    [Body]= wrangler_syntax:clause_body(T11),
+                    T2Pats=[wrangler_syntax:clause_patterns(T2)||T2 <- T2List1],
+                    T2Gs=[clause_guard(T2)||T2 <- T2List1],
+                    T2Body=[wrangler_syntax:clause_body(T2)||T2 <- T2List1],
+                    case wrangler_syntax:clause_patterns(T11) of 
+                        [Pat] ->
+                            [{true, [{Pat, T2Pats}, {Guard, T2Gs}, {Body, T2Body}]}];
+                        [] ->
+                            [{true, [{Guard, T2Gs}, {Body, T2Body}]}]
+                    end                         
             end
     end.
           
@@ -500,7 +517,7 @@ same_type_unification(Exp1, Exp2) ->
                     list_unification_1(Es1, Es2);
                 false ->
                     SubTrees1 = subtrees(Exp1),
-                     SubTrees2 = subtrees(Exp2),
+                    SubTrees2 = subtrees(Exp2),
                     case length(SubTrees1) == length(SubTrees2) of
                         true ->
                             unification(SubTrees1, SubTrees2);
@@ -508,12 +525,13 @@ same_type_unification(Exp1, Exp2) ->
                     end
             end;
         _ ->
-	    SubTrees1 = subtrees(Exp1),
+            SubTrees1 = subtrees(Exp1),
             SubTrees2 = subtrees(Exp2),
             case length(SubTrees1) == length(SubTrees2) of
 		true ->
-                    unification(SubTrees1, SubTrees2);
-                _ -> [false]
+                    unification(SubTrees1, SubTrees2);                    
+                _ -> 
+                    [false]
 	    end
     end.
 
@@ -542,9 +560,11 @@ var_binding_structure(ASTList) ->
             [DefLoc|| {_Name, _SrcLoc, DefLoc} <- VarLocs]
     end.
 
+is_meta_list(Node) when is_list(Node) -> false;
 is_meta_list(Node) ->
     is_meta_list_variable(Node) orelse is_meta_clause_list(Node) orelse
         is_meta_function_arity_list(Node).
+  
 
 is_meta_clause_list(C) ->
     T = wrangler_syntax:type(C),
@@ -576,6 +596,36 @@ is_meta_clause_list(C) ->
                                         is_meta_meta_list_variable(B);  
                                 _ -> false
                             end;
+                        [G] -> case is_meta_list_variable(G) of 
+                                   true ->
+                                       case Body of 
+                                           [B] ->
+                                               is_meta_meta_list_variable(P) andalso 
+                                                   is_meta_meta_list_variable(G) andalso
+                                                   is_meta_meta_list_variable(B);  
+                                           _ -> false
+                                       end;
+                                   false -> false
+                               end;
+                        _ -> false
+                    end;
+                [] ->
+                    case Guard of
+                        [[G]] ->
+                            case Body of 
+                                [B] ->
+                                    is_meta_meta_list_variable(G) andalso
+                                        is_meta_meta_list_variable(B);  
+                                _ -> false
+                            end;
+                        [G] -> %% temporay fix.
+                            case Body of 
+                                [B] ->
+                                    is_meta_meta_list_variable(G) andalso
+                                        is_meta_meta_list_variable(B);  
+                                _ -> false
+                                         
+                            end;
                         _ -> false
                     end;
                 _ ->
@@ -583,6 +633,7 @@ is_meta_clause_list(C) ->
             end;
         _ -> false
     end.
+   
 
 is_meta_function_arity_list(Node) ->
     case wrangler_syntax:type(Node) of
@@ -614,13 +665,13 @@ is_meta_atom(Node) ->
     end.
         
 is_meta_list_variable(Var) ->
-    case wrangler_syntax:type(Var) of
-        variable ->
-            VarName = wrangler_syntax:variable_name(Var),
-            lists:prefix("@@", lists:reverse(atom_to_list(VarName)));
-        _ ->
-            false
-    end.
+   case wrangler_syntax:type(Var) of
+       variable ->
+           VarName = wrangler_syntax:variable_name(Var),
+           lists:prefix("@@", lists:reverse(atom_to_list(VarName)));
+       _ ->
+           false
+   end.
 
 is_meta_meta_list_variable(Var) ->
     case wrangler_syntax:type(Var) of
@@ -658,28 +709,27 @@ is_macro_name(Exp) ->
 clause_guard(C) ->
     revert_clause_guard(wrangler_syntax:clause_guard(C)).
 
-revert_clause_guard(none) -> [[]];
+revert_clause_guard(none) ->[]; 
 revert_clause_guard(E)->
-    case  wrangler_syntax:type(E) of
-        disjunction -> wrangler_syntax:revert_clause_disjunction(E);
-        conjunction ->
-            %% Only the top level expression is
-            %% unfolded here; no recursion.
-            [wrangler_syntax:conjunction_body(E)];
-        _ ->
-            [[E]]       % a single expression
+    E1=wrangler_syntax:revert_clause_disjunction(E),
+    case E1 of 
+        [[Guard]] ->
+            case is_meta_list_variable(Guard) of 
+                true->
+                    [Guard];
+                false -> E1
+            end;
+        _ -> E1
     end.
+
 
 subtrees(T) ->
     case wrangler_syntax:type(T) of
         clause ->
-            case wrangler_syntax:clause_guard(T) of
-                none -> [wrangler_syntax:clause_patterns(T), [[]],
-                         wrangler_syntax:clause_body(T)];
-                G -> [wrangler_syntax:clause_patterns(T),
-                      revert_clause_guard(G), 
-                      wrangler_syntax:clause_body(T)]
-            end;
+            G=wrangler_syntax:clause_guard(T),
+            [wrangler_syntax:clause_patterns(T),
+             revert_clause_guard(G),
+             wrangler_syntax:clause_body(T)];
         _ ->
             wrangler_syntax:subtrees(T)
     end.

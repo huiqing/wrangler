@@ -1,5 +1,112 @@
-%% @hidden
-%% @private
+%% Copyright (c) 2012, Huiqing Li, Simon Thompson
+%% All rights reserved.
+%%
+%% Redistribution and use in source and binary forms, with or without
+%% modification, are permitted provided that the following conditions are met:
+%%     %% Redistributions of source code must retain the above copyright
+%%       notice, this list of conditions and the following disclaimer.
+%%     %% Redistributions in binary form must reproduce the above copyright
+%%       notice, this list of conditions and the following disclaimer in the
+%%       documentation and/or other materials provided with the distribution.
+%%     %% Neither the name of the copyright holders nor the
+%%       names of its contributors may be used to endorse or promote products
+%%       derived from this software without specific prior written permission.
+%%
+%% THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS ''AS IS''
+%% AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE 
+%% IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE 
+%% ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS AND CONTRIBUTORS 
+%% BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR 
+%% CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF 
+%% SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR 
+%% BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, 
+%% WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR 
+%% OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF 
+%% ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+%%@author  Huiqing Li and Simon Thompson <H.Li, S.J.Thompson@kent.ac.uk>
+%%
+%%
+%%@doc Wrangler's support for API migration. 
+%% Most software evolves during its lifetime, and this will often change
+%% the API of a library. A change of interface made to a library function could
+%% potentially affect all client applications of the library. The  API 
+%% transformations required tend to be done manually by the maintainers
+%% of the client code, and this process can be both tedious and error-prone.
+%%
+%% Wrangler's support for API migration refactorings is  based on the template- 
+%% and rule-based technique; however, unlike general refactorings, an API migration 
+%% refactoring only requires the author to define adapter functions that implement 
+%% the `old' API functions using the `new' API functions.  Once the adapter module 
+%% has been defined, Wrangler can then take this as input, and generate the refactoring
+%% code that implements the migration.
+%%
+%% As a design principle, we try to limit the scope of changes as much as possible, so 
+%% that only the places where the `old' API function is called are affected, and 
+%% the remaining part of the code is unaffected.  
+%%
+%% To illustrate our approach, we take the migration from `regexp:match/2'
+%% to `re:run/3' as an example, which represents one of the most complex API changes 
+%% we have seen in practice. Tthe change involves every aspect of the function interface, 
+%% namely the module name, function name, arguments and values returned.
+%%
+%% An <em>adapter</em> function is a single-clause function that implements the `old' API 
+%% function using the `new' API. The function shown below is the adapter function for 
+%% the migration from `regexp:match/2' to `re:run/3'.
+%% ``` match(String, RegExp) ->
+%%       case re:run(String, RegExp, [global]) of
+%%         {match, Match} ->
+%%           {Start0, Len}=lists:last(lists:ukeysort(2, Match)),
+%%           Start = Start0+1,
+%%           {match, Start, Len};
+%%         nomatch -> nomatch
+%%       end.'''
+%% A `case' expression is needed by the definition of the adapter function if and only 
+%% if the value returned by the API function is affected by the migration, and the returned 
+%% value is of a `union' type, i.e. a type consists of a number of alternatives. Within 
+%% the `case' expression, each expression clause handles one possible alternative of the 
+%% return value, and the clause body defines how to derive the value that should be returned 
+%% by the `old' API function from the value returned by the `new' one. 
+%%
+%% A guard expression can be used to enures the mutual exclusiveness of expression clauses. For 
+%% example, the adaptor function for the migration from lists:keysearch/3 to lists:keyfind/3 can 
+%% be defined as: 
+%% ``` keysearch(Key, N, TupleList) ->
+%%       case lists:find(Key, N, TupleList) of
+%%          Tuple when is_tuple(Tuple)->
+%%              {value, Tuple};
+%%          false ->
+%%             false
+%%       end.'''
+%%
+%% Obviously, for an API migration that does not affect the return value of the function, 
+%% a `case' expression is not needed. For the case in which only the name of the API function
+%% has been changed, the body of the adapter function could be just a function application 
+%% of the `new' function. 
+%%
+%% A number of constraints should be satisfied by adapter functions:
+%% <ul>
+%% <li> The definition should have only one clause, and the name/arity should be the 
+%%  same as the `old' function. </li>
+%% <li> The parameters of the function should all be variables. </li>
+%% <li> If the function definition is a `case' expression, then the last expression of 
+%%      every clause body of the `case' expression should be a simple expression 
+%%      that syntactically can be used as a pattern expression. </li>
+%% </ul>
+%% Apart from the adaptor functions, an adaptor module should also export a special function 
+%% `old_api_module_name/0' which returns an atom representing  the name of the module to 
+%% which the old API functions belong. As a result, an adaptor module can only contain adaptor 
+%% functions for API functions from the same module.
+%% 
+%% Some example adaptor modules: 
+%%<ul>
+%%<li>
+%%<a href="file:regexp_re.erl"> From regexp to re;</a>.
+%%</li>
+%%<li>
+%%<a href="file:keysearch_keyfind.erl"> From lists:keysearch/3 to lists:keyfind/3.</a>.
+%%</li>
+%%</ul>
 -module(refac_api_migration).
 
 -export([do_api_migration/5,
@@ -9,8 +116,6 @@
          simplify_expr/2, simplify_match_expr/2]).
 
 -include("../include/wrangler.hrl").
-
--export([behaviour_info/1]).
 
 -define(INTERNAL_RULE(Before, After, Cond),
         fun()->
@@ -30,10 +135,10 @@
                                end 
                        end, Before} 
         end()).
-%%@private
--spec behaviour_info(atom()) ->[{atom(), arity()}].
-behaviour_info(callbacks) ->
-    [{old_apis, 0}, {meta_rule_set,0}, {simple_rule_set, 0}].
+%% %%@private
+%% -spec behaviour_info(atom()) ->[{atom(), arity()}].
+%% behaviour_info(callbacks) ->
+%%     [{old_apis, 0}, {meta_rule_set,0}, {simple_rule_set, 0}].
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%                                                                   %%
@@ -810,6 +915,7 @@ mk_new_var_define_expr_2(Var)->
          wrangler_syntax:variable('_File@')]
          )).
     
+%%@private
 mk_str(Str, Args) ->
     lists:flatten(io_lib:format(Str, Args)).
 
@@ -822,7 +928,7 @@ replace_quote_place_holder(FormStr) ->
     re:replace(FormStr1, ",[\t\n\r\s]*wrangler_quote_after", "\"", 
                [{return, list}, global]).
 
-        
+%%@private        
 mk_new_var(BaseName, UsedVars) ->
     case lists:member(list_to_atom(BaseName), UsedVars) of 
         false -> 
@@ -855,6 +961,7 @@ all_vars(Node) ->
 %%                                                 lists:member(api_refac:fun_define_info(F@),
 %%                                                              OldMFAs))], Form),
 
+%%@private
 simplify_expr(NewExpr, OldExpr) ->
     NewExprStr = api_refac:pp(NewExpr),
     NewExpr1 = wrangler_misc:parse_annotate_expr(NewExprStr),
@@ -882,6 +989,7 @@ simplify_expr_1(Expr, NewVars) ->
             simplify_expr_1(NewExpr, NewVars)
     end.
 
+%%@private
 simplify_match_expr(Expr, NewVars) ->
     Left = wrangler_syntax:match_expr_pattern(Expr),
     Right = wrangler_syntax:match_expr_body(Expr),
@@ -1108,3 +1216,5 @@ remove_last_expr_1(C) ->
 
 is_tuple_rule()->
     ?RULE(?T("is_tuple({Es@@})"), wrangler_syntax:empty_node(), true).
+
+

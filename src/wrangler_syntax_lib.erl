@@ -59,7 +59,6 @@
 
 -export([function_name_expansions/1, split_lines/1]).
 
--export([env_loop/1]).
 %% =====================================================================
 %% @spec variables(syntaxTree()) -> set(atom())
 %%
@@ -276,7 +275,7 @@ annotate_bindings(Tree) ->
 vann(Tree, Env, Ms, VI, Pid) ->
     case wrangler_syntax:type(Tree) of
 	variable ->
-	    V = wrangler_syntax:variable_name(Tree),
+            V = wrangler_syntax:variable_name(Tree),
 	    P = wrangler_syntax:get_pos(Tree),
 	    case lists:keysearch({V, P}, 1, VI) of
 		{value, {{V, P}, As}} ->
@@ -322,6 +321,7 @@ vann(Tree, Env, Ms, VI, Pid) ->
 	function -> vann_function(Tree, Env, Ms, VI, Pid);
 	rule -> vann_rule(Tree, Env, Ms, VI, Pid);
 	fun_expr -> vann_fun_expr(Tree, Env, Ms, VI, Pid);
+        named_fun_expr -> vann_named_fun_expr(Tree, Env, Ms, VI, Pid);
 	list_comp -> vann_list_comp(Tree, Env, Ms, VI, Pid);
         binary_comp ->vann_binary_comp(Tree, Env, Ms, VI, Pid);
 	generator -> vann_generator(Tree, Env, Ms, VI, Pid);
@@ -411,6 +411,18 @@ vann_fun_expr(Tree, Env, Ms, VI, Pid) ->
     {Cs1, {_, Free}} = vann_fun_expr_clauses(Cs, Env, Ms, VI, Pid),
     Tree1 = rewrite(Tree, wrangler_syntax:fun_expr(Cs1)),
     Bound = [],
+    {ann_bindings(Tree1, Env, Bound, Free), Bound, Free}.
+
+vann_named_fun_expr(Tree, Env, Ms, VI, Pid) ->
+    Name = wrangler_syntax:named_fun_expr_name(Tree),
+    {Name1, Bound1, Free1} = 
+        vann_pattern(Name, Env, Ms, VI, Pid),
+    Env1 = ordsets:union(Env, Bound1),
+    Cs = wrangler_syntax:named_fun_expr_clauses(Tree),
+    {Cs1, {_Bound2, Free2}} = vann_fun_expr_clauses(Cs, Env1, Ms, VI, Pid),
+    Free = ordsets:union(Free1, ordsets:subtract(Free2, Bound1)),
+    Tree1 = rewrite(Tree, wrangler_syntax:named_fun_expr(Name1,Cs1)),
+    Bound =[],
     {ann_bindings(Tree1, Env, Bound, Free), Bound, Free}.
 
 vann_match_expr(Tree, Env, Ms, VI, Pid) ->
@@ -942,7 +954,7 @@ delete_binding_anns([]) -> [].
 
 
 start_env_process() ->
-    spawn_link(?MODULE, env_loop, [[]]).
+    spawn_link(fun() -> env_loop([]) end).
    
 stop_env_process(Pid) ->
     Pid ! stop.

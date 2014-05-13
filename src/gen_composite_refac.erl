@@ -37,7 +37,7 @@
 %%   the refactorer asks the user for input at the very beginning of the composite 
 %%   refactoring. There should be one prompt string for each input.
 %% Callback function `composite_refac/1':
-%% ```composite_refac(Args::#args()) 
+%% ```composite_refac(Args::#args{}) 
 %%       ===> composite_refac()|[]'''
 %%   `composite_refac' is the function in which the user could script a 
 %%   composite refactoring. The definition of record `args' is the same as the 
@@ -163,7 +163,7 @@
 %% bottom-up order.
 %%
 %% For the type specification of refactoring command generators, please see 
-%% <a href="wrangler_extended.html">wrangler_extended</a>.
+%% <a href="wrangler_gen.html">wrangler command generators</a>.
 %%
 %% To allow fine control over the generation of refactoring commands and the way a refactoring command 
 %% to be run, we have defined a small language for scripting composite refactorings. The DSL, as shown 
@@ -238,13 +238,13 @@
 %%
 %%%% Some example composite refactorings:
 %%<li>
-%%<a href="file:refac_batch_clone_removal.erl" >Batch clone elimination;</a>.
+%%<a href="file:refac_batch_clone_elimination.erl" >Batch clone elimination;</a>.
 %%</li>
 %%<li>
-%%<a href="file:examples/refac_batch_tuple_args.erl" >Batch tupling of function arguments;</a>.
+%%<a href="file:refac_batch_rename_fun.erl">Batch renaming of function names from camelCase to camel_case. </a>
 %%</li>
 %%<li>
-%%<a href="file:examples/refac_batch_rename_fun.erl">Batch renaming of functions. </a>
+%%<a href="file:refac_batch_prefix_module.erl">Add a prefix to Erlang module names. </a>
 %%</li>
 %%
 %% === How to apply an own-defined composite refactoring ===
@@ -262,19 +262,14 @@
          get_next_command/1, 
          input_par_prompts/1]).
 
--export([behaviour_info/1]).
-
 -compile(export_all).
 
 -include("../include/wrangler.hrl").
 
-%%@private
--spec behaviour_info(atom()) ->[{atom(), arity()}].
-behaviour_info(callbacks) ->
-    [{composite_refac,1}, 
-     {input_par_prompts, 0},
-     {select_focus,1}].
-
+-callback composite_refac(Args::#args{}) -> composite_refac()|[].
+-callback input_par_prompts()->[string()].
+-callback select_focus(Args::#args{}) -> {ok, term()}|{error, term()}.   
+       
 %%@private
 input_par_prompts(CallBackMod) ->
     Res =input_pars_1(CallBackMod),

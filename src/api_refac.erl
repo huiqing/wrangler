@@ -1,4 +1,4 @@
-%% Copyright (c) 2010, Huiqing Li, Simon Thompson
+%% Copyright (c) 2012, Huiqing Li, Simon Thompson
 %% All rights reserved.
 %%
 %% Redistribution and use in source and binary forms, with or without
@@ -283,31 +283,31 @@
 %% Some example refactorings implemented using the Wrangler API:
 %%<ul>
 %%<li>
-%%<a href="file:refac_swap_args.erl" > Swap arguments of a function;</a>.
+%%<a href="file:refac_swap_function_arguments.erl" > Swap arguments of a function;</a>.
 %%</li>
 %%<li>
-%%<a href="file:refac_remove_arg.erl" > Remove an argument of a function;</a>.
+%%<a href="file:refac_remove_an_argument.erl" > Remove an argument of a function;</a>.
 %%</li>
 %%<li>
-%%<a href="file:refac_keysearch_to_keyfind.erl"> replace the uses of lists:keysearch/3 with lists:keyfind/3; </a>
-%%</li>
-%%<li>
-%%<a href="file:refac_specialise.erl"> Specialise a function definition; </a>
+%%<a href="file:refac_specialise_a_function.erl"> Specialise a function definition; </a>
 %%</li>
 %%<li>
 %%<a href="file:refac_apply_to_remote_call.erl"> Apply to remote function call; </a>
 %%</li>
 %%<li>
-%%<a href="file:refac_intro_import.erl">Introduce an import attribute; </a>
+%%<a href="file:refac_add_an_import_attribute.erl">Introduce an import attribute; </a>
 %%</li>
 %%<li>
-%%<a href="file:refac_remove_import.erl">Remove an import attribute;</a>
+%%<a href="file:refac_remove_an_import_attribute.erl">Remove an import attribute;</a>
 %%</li>
 %%<li>
-%%<a href="file:refac_list.erl"> Various list-related transformations;</a>
+%%<a href="file:refac_batch_clone_elimination.erl" >Batch clone elimination;</a>.
 %%</li>
 %%<li>
-%%<a href="file:refac_batch_rename_fun.erl"> Batch renaming of function names from camelCaseto camel_case. </a>
+%%<a href="file:refac_batch_rename_fun.erl">Batch renaming of function names from camelCase to camel_case. </a>
+%%</li>
+%%<li>
+%%<a href="file:refac_batch_prefix_module.erl">Add a prefix to Erlang module names. </a>
 %%</li>
 %%<li>
 %%<a href="file:inspec_examples.erl"> A collection of code inspectors written using the Wrangler API. </a>
@@ -869,6 +869,7 @@ remove_from_import(Node, _FA={F,A}) ->
     end.
 
 %% =======================================================================
+%%@private
 add_to_export(Node, FAtoAdd) ->
     add_to_export_after(Node, FAtoAdd, none).
 
@@ -962,11 +963,19 @@ pp_1([E|Es]) ->
     wrangler_prettypr:format(E) ++ "," ++ pp_1(Es).
 
 %%@private
-quote(Str) ->    
-    wrangler_misc:parse_annotate_expr(Str).
+quote(Str, Pos) ->    
+   wrangler_misc:extended_parse_annotate_expr(Str, Pos).
+   
+%%@private
+anti_quote(Str, Pos) ->    
+    wrangler_misc:extended_parse_annotate_expr(Str, Pos).
 
+%%@private
+quote(Str) ->    
+    wrangler_misc:extended_parse_annotate_expr(Str).
+%%@private
 anti_quote(Str) ->    
-    wrangler_misc:parse_annotate_expr(Str).
+    wrangler_misc:extended_parse_annotate_expr(Str).
 
 %%=================================================================
 %%@private
@@ -974,7 +983,8 @@ subst(Expr, Subst) when is_list(Expr) ->
     [subst(E, Subst)||E<-Expr];
 
 subst(Expr, Subst) ->
-    {Expr1, _} =api_ast_traverse:stop_tdTP(fun do_subst/2, Expr, Subst),
+    {Expr1, _} =api_ast_traverse:stop_tdTP(fun(N, S) -> do_subst(N, S) end, 
+                                           Expr, Subst),
     Expr2=expand_meta_list(Expr1),
     remove_fake_begin_end(Expr2).
    
@@ -994,11 +1004,16 @@ do_subst(Node, Subst) ->
                                         [E] ->
                                             %% No longer can guarantee the correctness of annotations.
                                             {reset_pos_and_range(E), true};
+                                            %%{wrangler_syntax:copy_pos(VarName, E), true};
                                         _ ->
-                                            E1=wrangler_syntax:add_ann(
-                                                    {fake_block_expr, true},
-                                                    reset_pos_and_range(
-                                                      wrangler_syntax:block_expr(Expr))),
+                                             E1=wrangler_syntax:add_ann(
+                                                     {fake_block_expr, true},
+                                                     reset_pos_and_range(
+                                                       wrangler_syntax:block_expr(Expr))),
+                                            %% E1=wrangler_syntax:copy_pos(VarName, 
+                                            %%                             wrangler_syntax:add_ann(
+                                            %%                               {fake_block_expr, true},
+                                            %%                               wrangler_syntax:block_expr(Expr))),
                                             {E1, true}
                                     end;
                                 false ->
@@ -1031,18 +1046,20 @@ do_subst(Node, Subst) ->
             end;
 	_ -> {Node, false}
     end.
-                                   
-reset_pos_and_range(Node) when is_list(Node) ->
-    [reset_pos_and_range(N)||N<-Node];
-reset_pos_and_range(Node) ->
-    case is_tree(Node) of 
-        true ->
-            wrangler_syntax:set_pos(
-                 wrangler_misc:update_ann(Node, {range, {{0,0},{0,0}}}),
-                 {0,0});
-        false ->
-            Node
-    end.
+               
+reset_pos_and_range(Node) ->                    
+         Node.
+%% reset_pos_and_range(Node) when is_list(Node) ->
+%%     [reset_pos_and_range(N)||N<-Node];
+%% reset_pos_and_range(Node) ->
+%%     case is_tree(Node) of 
+%%         true ->
+%%             wrangler_syntax:set_pos(
+%%                  wrangler_misc:update_ann(Node, {range, {{0,0},{0,0}}}),
+%%                  {0,0});
+%%         false ->
+%%             Node
+%%     end.
 
 copy_pos_and_attrs(Node1, Node2) ->
     Ann=wrangler_syntax:get_ann(Node1),
@@ -1069,29 +1086,33 @@ reverse_function_clause(Node) ->
 reverse_function_clause_1(FunDef) ->
     FunName = wrangler_syntax:function_name(FunDef),
     Cs = wrangler_syntax:function_clauses(FunDef),
-    case [C||C <- Cs, wrangler_syntax:type(C) == function_clause] of
-        [] -> FunDef;
-        Cs1->
-            Msg ="Wrangler internal error: unconsistent transformation.",
-            case length(Cs)==length(Cs1) of 
-                true ->
-                    NameCs = [{wrangler_syntax:function_clause_name(C),
-                               wrangler_syntax:function_clause(C)}||C <- Cs1],
-                    {Names, Cs2} =lists:unzip(NameCs),
-                    NameVals =[wrangler_syntax:atom_value(Name)||Name <- Names],
-                    case lists:usort(NameVals) of 
-                        [_] ->
-                            NewFunName = wrangler_misc:rewrite(FunName, hd(Names)),
-                            NewFunDef = wrangler_syntax:function(NewFunName, Cs2),
-                            wrangler_misc:rewrite(FunDef,NewFunDef);
-                        _ ->
-                            erlang:error(Msg)
-                    end;
-                false ->
+    Cs1=lists:append(
+          [case wrangler_syntax:type(C) of
+               function_clause -> [C];
+               block_expr -> wrangler_syntax:block_expr_body(C)
+           end||C<-Cs]),
+    AllFunClause=lists:all(fun(C) ->
+                                   wrangler_syntax:type(C)==function_clause 
+                           end, Cs1),
+    Msg ="Wrangler internal error: unconsistent transformation.",
+    case AllFunClause of 
+        true ->
+            NameCs = [{wrangler_syntax:function_clause_name(C),
+                       wrangler_syntax:function_clause(C)}||C <- Cs1],
+            {Names, Cs2} =lists:unzip(NameCs),
+            NameVals =[wrangler_syntax:atom_value(Name)||Name <- Names],
+            case lists:usort(NameVals) of 
+                [_] ->
+                    NewFunName = wrangler_misc:rewrite(FunName, hd(Names)),
+                    NewFunDef = wrangler_syntax:function(NewFunName, Cs2),
+                    wrangler_misc:rewrite(FunDef,NewFunDef);
+                _ ->
                     erlang:error(Msg)
-            end
+            end;
+        _ -> 
+            erlang:error(Msg)
     end.
-
+   
 %%======================================================================
 -type (rule()::{rule, any(), any()}).
 -spec(search_and_transform([rule()], [filename()|dir()]|
@@ -1147,7 +1168,8 @@ search_and_transform_1(Rules, {File, Tree}, Fun) ->
     Res=search_and_transform_4(File, Rules, Tree, Fun, Selective),
     {File, element(1, Res)};
 search_and_transform_1(Rules, Tree, Fun) ->
-    element(1, search_and_transform_4(none, Rules, Tree, Fun, {false,[]})).
+    Tree1=wrangler_misc:extend_function_clause(Tree),
+    element(1, search_and_transform_4(none, Rules, Tree1, Fun, {false,[]})).
     
 
 search_and_transform_2(Rules, FileOrDirs, Fun) ->
@@ -1192,7 +1214,7 @@ search_and_transform_4(File,Rules,Tree,Fun,Selective) ->
                                 {{SLn, SCol}, {ELn, ECol}}=start_end_loc(Node),
                                 MD5 = erlang:md5(wrangler_prettypr:format(Node)),
                                 ChangeCand={{File, SLn, SCol, ELn, ECol, MD5},
-                                            wrangler_prettypr:format(NewExprAfter)},
+                                            format_new_code(NewExprAfter)},
                                 wrangler_gen_refac_server:add_change_cand(self(), ChangeCand),
                                 {NewExprAfter, true};
                             {false, []} ->
@@ -1228,7 +1250,7 @@ search_and_transform_4(File,Rules,Tree,Fun,Selective) ->
             extended_stop_tdTP(F, Tree, CandsNotToChange)
     end.
 
-    
+   
 %% pre_order
 extended_full_tdTP(Fun, Node, Others) ->
     {Node1, C} =extended_full_tdTP_1(Fun, Node, Others),
@@ -1327,18 +1349,33 @@ extended_rewrite(OldTree, NewTree, Changed) ->
 
 
 remove_fake_begin_end(Node) ->
+    Type = wrangler_syntax:type(Node),
     case wrangler_syntax:subtrees(Node) of
         [] -> Node;
-        Gs ->
-            Gs1 = [[remove_fake_begin_end(T)||
-                       T<-remove_fake_begin_end_1(G)] || G <- Gs],
-            Node2 = wrangler_syntax:make_tree(wrangler_syntax:type(Node), Gs1),
-            wrangler_syntax:copy_attrs(Node, Node2)
+        [H|[[Tl]]] when Type==list ->
+            case is_empty_node_list(H) of 
+                true ->
+                    remove_fake_begin_end(Tl);
+                _ -> 
+                    remove_fake_begin_end_0(Node) 
+            end;
+        _ ->
+            remove_fake_begin_end_0(Node)
     end.
 
 
+remove_fake_begin_end_0(Node) ->
+    Type = wrangler_syntax:type(Node),
+    Gs =wrangler_syntax:subtrees(Node),
+    Gs1 = [[remove_fake_begin_end(T)||
+               T<-remove_fake_begin_end_1(G)] 
+           || G <- Gs],
+    wrangler_syntax:copy_attrs(
+      Node,wrangler_syntax:make_tree(Type, Gs1)).
+
 remove_fake_begin_end_1(Node)->
-    lists:append([remove_fake_begin_end_2(N)||N<-Node, not is_empty_node(N)]).
+    lists:append([remove_fake_begin_end_2(N)
+                  ||N<-Node, not is_empty_node(N)]).
    
                   
 remove_fake_begin_end_2(Node) when is_list(Node) ->
@@ -1357,6 +1394,10 @@ remove_fake_begin_end_2(Node) ->
             [Node]
     end.
 
+is_empty_node_list(List) when List/=[] ->
+    lists:all(fun(N) ->is_empty_node(N) end, List);
+is_empty_node_list(_) ->false.
+    
 is_empty_node(Node) ->
     is_tree(Node) andalso wrangler_syntax:type(Node) == empty_node.
        
@@ -1378,7 +1419,6 @@ extended_expr_match(Temp, Node, Cond) ->
 
 %%@private
 match({meta_apply, TCs}, Node, Cond) ->
-    %% wrangler_io:format("Temp:\n~p\n", [TCs]),
     Node1=wrangler_misc:extend_function_clause(Node),
     match_meta_apply_temp(TCs, Node1, Cond);
 match(Temp, Node, Cond) ->
@@ -1764,22 +1804,34 @@ is_tree(Node) ->
     wrangler_syntax:is_tree(Node) orelse wrangler_syntax:is_wrapper(Node).
 
 expand_meta_list(Tree) ->
-    {Tree1, _}  = api_ast_traverse:full_tdTP(fun expand_meta_list_1/2, Tree, {}),
+    {Tree1, _}  = api_ast_traverse:full_tdTP(fun(N, I) ->
+                                                     expand_meta_list_1(N, I)
+                                             end, Tree, {}),
     Tree1.
 
 expand_meta_list_1(Node, _OtherInfo) ->
     case wrangler_syntax:type(Node) of
         function ->
-            {Node, false};
+            FunName = wrangler_syntax:function_name(Node),
+            Cs = wrangler_syntax:function_clauses(Node),
+            Cs1 = lists:append([expand_meta_clause(C)||C <- Cs]),
+            case Cs=/=Cs1 of
+                true ->
+                    Node1=wrangler_misc:rewrite(
+                            Node,wrangler_syntax:function(FunName,Cs1)),
+                    {Node1, false};
+                false ->
+                    {Node, false}
+            end;
         case_expr ->
             Arg = wrangler_syntax:case_expr_argument(Node),
             Cs = wrangler_syntax:case_expr_clauses(Node),
             Cs1 = lists:append([expand_meta_clause(C)||C <- Cs]),
             case Cs=/=Cs1 of
                  true ->
-                     Node1=wrangler_misc:rewrite(
-                                Node,
-                                wrangler_syntax:case_expr(Arg, Cs1)),
+                    Node1=wrangler_misc:rewrite(
+                            Node,
+                            wrangler_syntax:case_expr(Arg, Cs1)),
                      {Node1, false};
                  false ->
                      {Node, false}
@@ -1866,36 +1918,65 @@ expand_meta_list_1(Node, _OtherInfo) ->
                             {Node, false}
                     end
             end;
-        _ ->
-            {Node, false}
+        disjunction -> 
+            {repair_guard_expr(Node),false};
+        _ -> {Node, false}
     end.
 
 expand_meta_clause(Clause) ->
-    case is_meta_clause(Clause) of 
+    case is_meta_case_clause(Clause) of 
         true->
-            [Pat] = wrangler_syntax:clause_patterns(Clause),
-            case revert_clause_guard(wrangler_syntax:clause_guard(Clause)) of
-                [[]] ->
-                    [Body] = wrangler_syntax:clause_body(Clause),
-                    ZippedPB = lists:zip(Pat, Body),
-                    [wrangler_syntax:clause(P, none, B)||
-                           {P, B} <- ZippedPB];
-                [[Guard]] ->
-                    [[Guard]] = revert_clause_guard(wrangler_syntax:clause_guard(Clause)),
-                    [Body] = wrangler_syntax:clause_body(Clause),
-                    ZippedPGB = lists:zip3(Pat, Guard, Body),
-                    [case G of 
-                         [] -> wrangler_syntax:clause(P, none, B);
-                         _ ->
-                             wrangler_syntax:clause(P, G, B)
-                     end
-                     ||{P, G, B} <-ZippedPGB]
-            end;
-        false ->
-            [Clause]
+            expand_meta_case_clause(Clause);
+        false->
+            case is_meta_if_clause(Clause) of 
+                true ->
+                    expand_meta_if_clause(Clause);
+                false ->
+                    [Clause]
+            end
     end.
 
+expand_meta_case_clause(Clause) ->
+    [Pat] = wrangler_syntax:clause_patterns(Clause),
+    case revert_clause_guard(wrangler_syntax:clause_guard(Clause)) of
+        [[]] ->
+            [Body] = wrangler_syntax:clause_body(Clause),
+            ZippedPB = lists:zip(Pat, Body),
+            [wrangler_syntax:clause(P, none, B)||
+                {P, B} <- ZippedPB];
+        [Guard] -> %% [[Guard]]?
+            [Body] = wrangler_syntax:clause_body(Clause),
+            ZippedPGB = lists:zip3(Pat, Guard, Body),
+            [case G of 
+                 [] -> wrangler_syntax:clause(P, none, B);
+                 _ ->
+                     wrangler_syntax:clause(P, G, B)
+             end
+             ||{P, G, B} <-ZippedPGB]
+    end.
+
+expand_meta_if_clause(Clause) ->
+    [Guard]=revert_clause_guard(wrangler_syntax:clause_guard(Clause)),
+    [Body] = wrangler_syntax:clause_body(Clause),
+    ZippedGB = lists:zip(Guard, Body),
+    [wrangler_syntax:clause([], G, B)||{G, B} <-ZippedGB].
+    
+        
+
 is_meta_clause(Clause)->
+    wrangler_syntax:type(Clause)==clause andalso 
+        (is_meta_case_clause(Clause) orelse
+        is_meta_if_clause(Clause)).
+     
+is_meta_case_clause(Clause) ->
+    case wrangler_syntax:type(Clause)==clause of 
+        true ->
+            is_meta_case_clause_1(Clause);
+        false ->
+            false
+    end.
+
+is_meta_case_clause_1(Clause) ->
     Pat = wrangler_syntax:clause_patterns(Clause),
     Guard = wrangler_syntax:clause_guard(Clause),
     Body = wrangler_syntax:clause_body(Clause),
@@ -1904,7 +1985,7 @@ is_meta_clause(Clause)->
             case is_list_of_lists(P) of 
                 true ->
                     case revert_clause_guard(Guard) of
-                        [[G]] ->
+                        [G] -> %% [[G]]?
                             case is_list_of_lists(G) of 
                                 true ->
                                     case Body of
@@ -1927,6 +2008,47 @@ is_meta_clause(Clause)->
                 false ->
                     false
             end;
+        _ ->
+            false
+    end.
+        
+is_meta_if_clause(Clause) ->
+    case wrangler_syntax:type(Clause)==clause of 
+        true -> is_meta_if_clause_1(Clause);
+        false-> false
+    end.
+
+is_meta_if_clause_1(Clause) ->
+    Pat = wrangler_syntax:clause_patterns(Clause),
+    Guard = wrangler_syntax:clause_guard(Clause),
+    Body = wrangler_syntax:clause_body(Clause),
+    case Pat of 
+        [] ->
+            case revert_clause_guard(Guard) of
+                [[G]] ->
+                    case is_list_of_lists(G) of 
+                        true ->
+                            case Body of
+                                [B]->
+                                    is_list_of_lists(B);
+                                _ ->
+                                    false
+                            end;
+                        false -> false
+                    end;
+                [G] -> 
+                     case is_list_of_lists(G) of 
+                        true ->
+                            case Body of
+                                [B]->
+                                    is_list_of_lists(B);
+                                _ ->
+                                    false
+                            end;
+                        false -> false
+                    end;
+                _ -> false
+            end;
         _ -> false
     end.
  
@@ -1936,17 +2058,31 @@ is_list_of_lists(L) ->
                           is_list(E)
                   end, L).
 
-revert_clause_guard(none) -> [[]];
+
+revert_clause_guard(none) ->[]; 
 revert_clause_guard(E)->
-    case  wrangler_syntax:type(E) of
-        disjunction -> wrangler_syntax:revert_clause_disjunction(E);
-        conjunction ->
-            %% Only the top level expression is
-            %% unfolded here; no recursion.
-            [wrangler_syntax:conjunction_body(E)];
-        _ ->
-            [[E]]       % a single expression
+    E1=wrangler_syntax:revert_clause_disjunction(E),
+    case E1 of 
+        [[Guard]] ->
+            [Guard];
+        _ -> E1
     end.
+       
+repair_guard_expr(E) -> 
+    Conjs = wrangler_syntax:revert_clause_disjunction(E),
+    case Conjs of 
+        [[Tests]]when is_list(Tests) ->
+            wrangler_syntax:disjunction(
+              conjunction_list([Tests]));
+        [[{tree, block_expr, _, Tests}]] ->
+           wrangler_syntax:disjunction(
+             [wrangler_syntax:conjunction(T)||T<-Tests]);
+        _ -> E
+    end.
+
+conjunction_list([L | Ls]) ->
+    [wrangler_syntax:conjunction(L) | conjunction_list(Ls)];
+conjunction_list([]) -> [].
 
 %% =====================================================================
 %% @spec type(Node::syntaxTree()) -> atom()
@@ -2423,6 +2559,7 @@ meta_apply_templates(_MFA={M,F,A}) ->
 
 
 %% not tested yet.
+%%@private
 get_mfas(File, Order) ->
     case Order == td orelse Order == bu of
         true ->
@@ -2444,3 +2581,11 @@ get_mfas(File, Order) ->
                     []
             end
     end. 
+
+
+format_new_code([Code])->
+    wrangler_prettypr:format(Code);
+format_new_code(Code) when is_list(Code) ->
+    wrangler_prettypr:format(wranglersyntax:block_expr(Code));
+format_new_code(Code) ->
+    wrangler_prettypr:format(Code).

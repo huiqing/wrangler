@@ -90,29 +90,26 @@
 %%
 %% Some example refactorings implemented using the Wrangler API:
 %%<li>
-%%<a href="file:refac_swap_args.erl" >Swap arguments of a function;</a>.
+%%<a href="file:refac_swap_function_arguments.erl" >Swap arguments of a function;</a>.
 %%</li>
 %%<li>
-%%<a href="file:refac_remove_arg.erl" >Remove an argument of a function;</a>.
+%%<a href="file:refac_remove_an_argument.erl" >Remove an argument of a function;</a>.
 %%</li>
 %%<li>
 %%<a href="file:refac_keysearch_to_keyfind.erl">Replace the uses of lists:keysearch/3 with lists:keyfind/3; </a>
 %%</li>
 %%<li>
-%%<a href="file:refac_specialise.erl">Specialise a function definition; </a>
+%%<a href="file:refac_specialise_a_function.erl">Specialise a function definition; </a>
 %%</li>
 %%<li>
 %%<a href="file:refac_apply_to_remote_call.erl">Apply to remote function call; </a>
 %%</li>
 %%<li>
-%%<a href="file:refac_intro_import.erl">Introduce an import attribute; </a>
+%%<a href="file:refac_add_an_import_attribute.erl">Introduce an import attribute; </a>
 %%</li>
 %%<li>
-%%<a href="file:refac_remove_import.erl">Remove an import attribute;</a>
-%%</li>
-%%<li>
-%%<a href="file:examples/refac_list.erl">Various list-related transformations;</a>
-%%</li>
+%%<a href="file:refac_remove_an_import_attribute.erl">Remove an import attribute;</a> 
+%%</li>  
 %%<li>
 %%<a href="file:refac_batch_rename_fun.erl">Batch renaming of function names from camelCaseto camel_case. </a>
 %%</li>
@@ -132,22 +129,22 @@
 -module(gen_refac).
 
 -export([run_refac/2, 
-		 run_refac/3,
+         run_refac/3,
          input_par_prompts/1,
          apply_changes/3
         ]).
 
--export([behaviour_info/1]).
-
 -include("../include/wrangler.hrl").
 
-%%@private
--spec behaviour_info(atom()) ->[{atom(), arity()}].
-behaviour_info(callbacks) ->
-    [{input_par_prompts,0}, {select_focus,1}, 
-     {check_pre_cond, 1}, {transform, 1},
-     {selective, 0}].
 
+-callback input_par_prompts() -> [string()].
+-callback select_focus(Args::#args{}) ->{ok, term()}|{error, term()}.
+-callback check_pre_cond(Args::#args{}) -> ok |{error, term()}.
+-callback selective() -> true | false.
+-callback transform(Args::#args{}) ->
+     {ok, [{{filename(),filename()},syntaxTree()}]} | {error, term()}.
+    
+     
 -spec(select_focus(Module::module(), Args::args()) ->
              {ok, term()} | {error, term()}).
 select_focus(Module, Args) ->
@@ -211,8 +208,10 @@ apply_changes(Module, Args, CandsNotToChange) ->
 run_refac(ModName, Args) ->
     run_refac(ModName, Args, emacs).
 
+
 %%@doc The interface function for invoking a refactoring defined 
 %% in module `ModName'.
+%%@private
 -spec(run_refac(Module::module()|string()|tuple(), Args::[term()], Editor::atom())->
              {ok, string()} | {ok, [{filename(), filename(), string()}]} | 
 			 {change_set, [{string(), string()}], module(), #args{}}|

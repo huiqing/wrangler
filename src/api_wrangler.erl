@@ -36,16 +36,18 @@
 %%   [http://www.cs.kent.ac.uk/projects/wrangler]
 
 %% @end
-%%
+%% 
 %% @doc This module describes the refactoring commands that can be run in an Erlang shell.
 %% <p>All refactorings commands should be run in the context of a Wrangler application. 
-%% Use wrangler_api:start() to start a Wrangler application, and wrangler_api:stop() the 
+%% Use api_wrangler:start() to start a Wrangler application, and api_wrangler:stop() to stop the 
 %% application.
-%% </p>
-
+%% </p> 
+ 
 -module(api_wrangler).
 
 -export([rename_mod/3, rename_fun/5, move_fun/5, similar_code/7]).
+
+-export([refac_bug_cond/1]).
 
 -export([start/0, stop/0, undo/0]).
 
@@ -61,12 +63,12 @@
 %% @doc Start a Wrangler application.
 %%@spec start() -> {ok, Pid}|{error, Reason}
 start() ->
-    application:start(wrangler_app).
+    application:start(wrangler).
 
 %% @doc Stop a Wrangler application.
 %%@spec stop()-> ok
 stop() ->
-    application:stop(wrangler_app).
+    application:stop(wrangler).
 
 %% @doc Undo the previous refactoring. This only works within a Wrangler application.
 %%@spec undo()-> {ok, FilesChanged::[filename()]}|{error, Reason}
@@ -93,7 +95,7 @@ rename_mod(ModOrFileName, NewModName, SearchPaths) ->
 %%				       {ok, FilesChanged::[filename()]}|{error,Reason}
 rename_fun(ModOrFileName, FunName, Arity, NewFunName, SearchPaths) ->
     try_apply(refac_rename_fun, rename_fun_by_name, 
-	      [ModOrFileName, FunName, Arity, NewFunName, SearchPaths]).
+	      [ModOrFileName, FunName, Arity, NewFunName, SearchPaths,command,8]).
 
 
 %%===================================================================================
@@ -130,6 +132,11 @@ similar_code(DirFileList,MinLen,MinToks,MinFreq,MaxVars,SimiScore,SearchPaths) -
     try_apply(refac_inc_sim_code, inc_sim_code_detection_command,
 	      [DirFileList,MinLen,MinToks,MinFreq,MaxVars,SimiScore,SearchPaths,8]).
 
+%%@doc For QuickCheck only.
+%%@private.
+-spec refac_bug_cond([filename()|dir()]) -> {ok, string()} |{error, term()}.
+refac_bug_cond(DirOrFileList) ->
+    try_apply(refac_bug_cond, refac_bug_cond, [DirOrFileList, command, 8]).
 
 
 try_apply(Mod, Fun, Args) -> 
@@ -138,9 +145,9 @@ try_apply(Mod, Fun, Args) ->
 	throw:Error -> 
 	    Error;   
 	exit:Reason->
-	    {'EXIT',Reason};
+	    {error,Reason};
 	error:Reason -> 
-	    {'EXIT',{Reason,erlang:get_stacktrace()}}
+	    {error,{Reason,erlang:get_stacktrace()}}
     end.
 
 

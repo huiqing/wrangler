@@ -1,3 +1,5 @@
+%% @private
+%% @hidden
 -module(regexp_re).
 
 -export([old_api_module_name/0]).

@@ -98,7 +98,7 @@ get_temp_file_path(Tab) ->
     list_to_atom(case find_homedir() of
                      false ->
                          "none";
-                     Dir ->
+                      Dir ->
                          filename:join([Dir, ".wrangler","temp", Tab])
                  end).
 -record(tabs, 
@@ -448,7 +448,12 @@ insert_to_ast_tab(Pid, {{M, F, A}, ExprASTs, StartLine}) ->
 %% Quick hash only updates the location information, as the 
 %% actual entries already exist.
 quick_hash_function(Pid, {{FName, FunName, Arity}, StartLine}) ->
-    Pid ! {quick_hash, {{FName, FunName, Arity}, StartLine}}.
+    Self=self(),
+    Pid ! {quick_hash, {{FName, FunName, Arity}, StartLine}, Self},
+    receive
+        {Pid, Self, done} ->
+            ok
+    end.
 
 %% Get initial clone candidates.    
 get_clone_candidates(Pid, Thresholds, Dir) ->
@@ -576,13 +581,28 @@ stop_hash_process(Pid) ->
     Pid!stop.
 
 insert_hash(Pid, {{M, F, A}, HashExprPairs}) ->
-    Pid ! {add, {{M, F, A}, HashExprPairs}}.
+    Self=self(),
+    Pid ! {add, {{M, F, A}, HashExprPairs}, Self},
+    receive
+        {Pid, Self, done} ->
+            ok
+    end.
 
 update_hash(Pid, {{FileName, FunName, Arity}, StartLine})->
-    Pid ! {quick_hash,{{FileName, FunName, Arity}, StartLine}}.
+    Self=self(),
+    Pid ! {quick_hash,{{FileName, FunName, Arity}, StartLine}, Self},
+    receive
+        {Pid, Self, done} ->
+            ok
+    end.
 
 remove_entry(Pid, {M, F, A}) ->
-    Pid !{remove_entry, {M, F, A}}.
+    Self=self(),
+    Pid !{remove_entry, {M, F, A}, Self},
+    receive
+         {Pid, Self, done} ->
+            ok
+    end.
 
 get_index(ExpHashTab, Key) ->
     case ets:lookup(ExpHashTab, Key) of 
@@ -597,13 +617,14 @@ get_index(ExpHashTab, Key) ->
 hash_loop({NextSeqNo, ExpHashTab, NewData},Inc) ->
     receive
 	%% add a new entry.
-	{add, {{M, F, A}, KeyExprPairs}} ->
+	{add, {{M, F, A}, KeyExprPairs}, From} ->
 	    KeyExprPairs1 =
 		[{{Index1, NumOfToks, StartEndLoc, StartLine, true}, HashIndex}
 		 || {Key, {Index1, NumOfToks, StartEndLoc, StartLine}} <- KeyExprPairs,
 		    HashIndex <- [get_index(ExpHashTab, Key)]],
+            From ! {self(), From, done},
 	    hash_loop({NextSeqNo+1, ExpHashTab, [{NextSeqNo, {M,F,A}, KeyExprPairs1}| NewData]},Inc);
-	{quick_hash,{{FileName, FunName, Arity}, StartLine}} ->
+	{quick_hash,{{FileName, FunName, Arity}, StartLine}, From} ->
 	    NewData1 = [case {M, F, A} of
 			    {FileName, FunName, Arity} ->
 				{Seq, {M, F, A}, [{{Index1, NumOfToks, StartEndLoc, StartLine, false}, HashKey}
@@ -611,6 +632,7 @@ hash_loop({NextSeqNo, ExpHashTab, NewData},Inc) ->
 			    _ ->
 				{Seq, {M, F, A}, KeyExprPairs}
 			end || {Seq, {M, F, A}, KeyExprPairs} <- NewData],
+            From ! {self(), From, done},
 	    hash_loop({NextSeqNo, ExpHashTab, NewData1},Inc);
 	{get_clone_candidates, From, Thresholds, Dir} ->
 	    {ok, OutFileName} = search_for_clones(Dir, lists:reverse(NewData), Thresholds),
@@ -632,7 +654,7 @@ hash_loop({NextSeqNo, ExpHashTab, NewData},Inc) ->
 	    C1 = {[F0(R, Len) || R <- Ranges], {Len, Freq}},
 	    From ! {self(), C1},
 	    hash_loop({NextSeqNo, ExpHashTab, NewData},Inc);
-	{remove_entry, {M, F, A}} ->
+	{remove_entry, {M, F, A}, From} ->
 	    NewData1 = [case {M,F,A}/={M1, F1, A1} of
 			    true ->
 				{Seq, {M1, F1, A1}, KeyExprPairs};
@@ -640,6 +662,7 @@ hash_loop({NextSeqNo, ExpHashTab, NewData},Inc) ->
 				{Seq, {M1, F1, A1}, []}
 			end
 			|| {Seq, {M1, F1, A1}, KeyExprPairs} <- NewData],
+            From ! {self(), From, done},
 	    hash_loop({NextSeqNo, ExpHashTab, NewData1},Inc);
 	stop ->
 	    %%file:write_file(?ExpSeqFile, term_to_binary(NewData)),
@@ -1815,7 +1838,7 @@ hash_ranges(Ranges) ->
 
 create_temp_dir()->
     case find_homedir() of 
-        none ->
+        false ->
             {error, "Wrangler could not infer home directory"};
         Path ->
             DotWranglerDir=filename:join(Path, ".wrangler"),

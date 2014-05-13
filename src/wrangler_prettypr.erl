@@ -442,7 +442,7 @@ lay_precomments(Cs,D, {DStartLine, DStartCol}) ->
 lay_postcomments_1([], D, _) -> D;
 lay_postcomments_1(Cs, D, DEndLn) ->
     {PostCsLn, _} = wrangler_syntax:get_pos(hd(Cs)),
-    case PostCsLn >= DEndLn + 1 of
+    case PostCsLn >= DEndLn + 1  andalso DEndLn /=0 of
         true ->
             lay_postcomments(Cs, above(D, text("")));
         false ->
@@ -539,7 +539,7 @@ lay_2(Node, Ctxt) ->
             text("[]");
 	tuple ->
             Es0 = wrangler_syntax:tuple_elements(Node),
-	    Sep = get_separator(Es0, Ctxt, ","),
+	    {Sep,_} = get_separator(Es0, Ctxt, ","),
 	    Es = seq(Es0, floating(text(Sep)), reset_check_bracket(reset_prec(Ctxt)), fun lay/2),
 	    Es1=lay_elems(fun wrangler_prettypr_0:par/1, Es, Es0, Ctxt),
             {{StartLn, StartCol}, {EndLn, EndCol}} = get_start_end_loc(Node),
@@ -573,7 +573,87 @@ lay_2(Node, Ctxt) ->
                             above(D1, nest(EndCol - StartCol, text("}")))
                     end
             end;
-	list -> 
+        map_expr ->
+            {PrecL, Prec, _} = inop_prec('#'),
+            Ctxt1 = reset_prec(Ctxt),
+            Args = wrangler_syntax:map_expr_argument(Node),
+            Fields = wrangler_syntax:map_expr_fields(Node),
+	    {Sep,_} = get_separator(Fields, Ctxt, ","),
+	    Fields1 = seq(Fields, floating(text(Sep)), reset_check_bracket(Ctxt1), fun lay/2),
+	    Fields2=lay_elems(fun wrangler_prettypr_0:par/1, Fields1, Fields, Ctxt),
+            {_, {EndLn, EndCol}} = get_start_end_loc(Node),
+            D2=case Fields of
+                   [] ->
+                       beside(text("#{"), text("}"));
+                   _ ->
+                       {StartLn,StartCol} = wrangler_syntax:get_pos(Node),
+                       {HdStartLn, HdStartCol} = 
+                           get_start_loc_with_comment(hd(Fields)),
+                       {LastEndLn, _LastEndCol} = 
+                           get_end_loc_with_comment(lists:last(Fields)),
+                       N = HdStartLn - StartLn,
+                       Offset = HdStartCol - (StartCol+2),
+                       D1 =case N=<0 orelse HdStartLn==0 orelse StartLn==0 of 
+                               true ->
+                                   case Offset>0 andalso HdStartCol/=0 andalso StartCol/=0 of 
+                                       true ->
+                                           beside(text("#{"), beside(text(spaces(Offset)), Fields2));
+                                       _ ->
+                                           beside(text("#{"), Fields2)
+                                   end;
+                               _ ->
+                                   above(text("#{"), nest(Offset, Fields2))
+                           end,
+                       N1 = EndLn - LastEndLn,
+                       case N1=<0  orelse HdStartLn==0 orelse StartLn==0 of 
+                           true ->
+                               beside(D1, text("}"));
+                           false ->
+                               above(D1, nest(EndCol - StartCol, text("}")))
+                       end
+               end,
+            D3 = case Args of 
+                     none -> D2;
+                     A ->
+                         beside(lay(A, set_prec(Ctxt, PrecL)), D2)
+                 end,
+            maybe_parentheses(D3, Prec, Ctxt);
+        map_field_assoc ->
+            Ctxt1 = reset_prec(Ctxt),
+            Left = wrangler_syntax:map_field_assoc_name(Node),
+            Right = wrangler_syntax:map_field_assoc_value(Node),
+            D1 = lay(Left, reset_check_bracket(Ctxt1)),
+            D2 = lay(Right,reset_check_bracket(Ctxt1)),
+            {LStart, LEnd} = get_start_end_loc(Left),
+            {RStart, REnd} = get_start_end_loc(Right),
+            ArrowStart = {ArrowLn, ArrowCol}=
+                get_keyword_loc_after('=>', Ctxt, LEnd),
+            ArrowEnd = {ArrowLn, ArrowCol+1},
+            LeftArrow=append_elems(fun wrangler_prettypr_0:horizontal/1,
+                                   {D1, {LStart, LEnd}},
+                                   {text("=>"), 
+                                    {ArrowStart, ArrowEnd}}),
+            append_elems(fun wrangler_prettypr_0:horizontal/1,
+                         {LeftArrow, {LStart, ArrowEnd}},
+                         {D2,{RStart, REnd}});
+        map_field_exact ->
+            Ctxt1 = reset_prec(Ctxt),
+            Left = wrangler_syntax:map_field_exact_name(Node),
+            Right = wrangler_syntax:map_field_exact_value(Node),
+            D1 = lay(Left, reset_check_bracket(Ctxt1)),
+            D2 = lay(Right,reset_check_bracket(Ctxt1)),
+            {LStart, LEnd} = get_start_end_loc(Left),
+            {RStart, REnd} = get_start_end_loc(Right),
+            EqStart={EqLn, EqCol} = get_keyword_loc_after(':=', Ctxt, LEnd),
+            EqEnd = {EqLn, EqCol+1},
+            LeftEq=append_elems(fun wrangler_prettypr_0:horizontal/1,
+                                {D1, {LStart, LEnd}},
+                                {text(":="),
+                                 {EqStart, EqEnd}}),
+            append_elems(fun wrangler_prettypr_0:horizontal/1,
+                         {LeftEq, {LStart, EqEnd}},
+                         {D2,{RStart, REnd}});
+        list -> 
             lay_list(Node, Ctxt);
 	operator ->
 	    Op = wrangler_syntax:operator_literal(Node),
@@ -645,7 +725,7 @@ lay_2(Node, Ctxt) ->
             Op =wrangler_syntax:application_operator(Node),
             Args = wrangler_syntax:application_arguments(Node),
             D = lay(Op,reset_check_bracket(set_prec(Ctxt, PrecL))),
-            Sep = get_separator(Args, Ctxt, ","),
+            {Sep,_} = get_separator(Args, Ctxt, ","),
 	    Ctxt1 =case length(Args)==1 andalso 
                        lists:member(wrangler_syntax:type(hd(Args)),
                                     [macro, infix_expr]) of
@@ -691,7 +771,7 @@ lay_2(Node, Ctxt) ->
 	    Ctxt1 = reset_check_bracket((reset_prec(Ctxt))#ctxt{clause = undefined}),
 	    Pats = wrangler_syntax:clause_patterns(Node),
 	    Body = wrangler_syntax:clause_body(Node),
-	    Sep = get_separator(Pats, Ctxt, ","),
+	    {Sep,_} = get_separator(Pats, Ctxt, ","),
 	    PatDocs = seq(Pats, floating(text(Sep)), Ctxt1, fun lay/2),
 	    D1 = lay_elems(fun wrangler_prettypr_0:par/1, PatDocs, Pats, Ctxt),
 	    Guard=wrangler_syntax:clause_guard(Node),
@@ -811,6 +891,14 @@ lay_2(Node, Ctxt) ->
 	    Cs=wrangler_syntax:fun_expr_clauses(Node),
 	    D = lay_clauses(Cs, fun_expr, reset_check_bracket(Ctxt1)),
 	    append_keywords("fun", "end", D, Cs, Ctxt1);
+        named_fun_expr ->
+            %% Done;
+	    Ctxt1 = reset_prec(Ctxt),
+            Name =wrangler_syntax:named_fun_expr_name(Node),
+            D1 = lay(Name, Ctxt),
+	    Cs=wrangler_syntax:named_fun_expr_clauses(Node),
+	    D2 = lay_clauses(Cs, {function, D1}, reset_check_bracket(Ctxt1)),
+	    append_keywords("fun", "end", D2, Cs, Ctxt1);
 	module_qualifier -> 
 	    %% Done;
 	    {PrecL, _Prec, PrecR} = inop_prec(':'),
@@ -838,7 +926,7 @@ lay_2(Node, Ctxt) ->
 		    D =lay(N, Ctxt1),
 		    beside(floating(text("-")), beside(D, floating(text("."))));
 		Args ->
-                    Sep = get_separator(Args, Ctxt1, ","),
+                    {Sep,_} = get_separator(Args, Ctxt1, ","),
                     D2= case wrangler_syntax:atom_value(N) of 
                             spec ->
                                 case spec_need_paren(Ctxt1#ctxt.tokens) of 
@@ -861,12 +949,12 @@ lay_2(Node, Ctxt) ->
 	binary ->   
 	    Ctxt1 = reset_check_bracket(reset_prec(Ctxt)),
 	    Fields = wrangler_syntax:binary_fields(Node),
-	    Sep = get_separator(Fields, Ctxt, ","),
+	    {Sep,_} = get_separator(Fields, Ctxt, ","),
 	    Es = seq(Fields, floating(text(Sep)), Ctxt1, fun lay/2),
 	    D = lay_elems(fun wrangler_prettypr_0:par/1, Es, Fields, Ctxt1),
 	    beside(floating(text("<<")), beside(D, floating(text(">>"))));
 	binary_field ->
-	    Ctxt1 = reset_check_bracket(reset_prec(Ctxt)),
+	    Ctxt1 = reset_check_bracket(set_prec(Ctxt, max_prec())),
 	    D1 = lay(wrangler_syntax:binary_field_body(Node), Ctxt1),
 	    D2 = case wrangler_syntax:binary_field_types(Node) of
 		     [] -> 
@@ -902,7 +990,7 @@ lay_2(Node, Ctxt) ->
 		end;
 	conjunction -> 
                 Body = wrangler_syntax:conjunction_body(Node),
-		Sep = get_separator(Body, Ctxt, ","),
+		{Sep,_} = get_separator(Body, Ctxt, ","),
 		Es = seq(Body, floating(text(Sep)), reset_check_bracket(reset_prec(Ctxt)),
                          fun lay/2),
 		lay_elems(fun wrangler_prettypr_0:par/1, Es, Body, Ctxt);
@@ -944,7 +1032,7 @@ lay_2(Node, Ctxt) ->
                 Ctxt1 = reset_prec(Ctxt),
                 N = wrangler_syntax:macro_name(Node),
                 Args = wrangler_syntax:macro_arguments(Node),
-                Sep = get_separator(Args, Ctxt1, ","),
+                {Sep,_} = get_separator(Args, Ctxt1, ","),
                 D = case Args of
 		      none ->
 		          lay(N, reset_check_bracket(Ctxt1));
@@ -953,9 +1041,9 @@ lay_2(Node, Ctxt) ->
                           Ctxt2 = case length(Args) of
                                       1 ->
                                            Ctxt1#ctxt{check_bracket=true};
-                                      _ -> reset_check_bracket(Ctxt1)
+                                      _ -> reset_check_bracket(set_prec(Ctxt1, max_prec()))
                                   end,
-                          As=seq_1(Args, floating(text(Sep)), reset_prec(Ctxt2), fun lay/2),
+                          As=seq_1(Args, floating(text(Sep)), Ctxt2, fun lay/2),
                           ArgsD=lay_elems(fun wrangler_prettypr_0:par/1, As, Args, Ctxt1),
 			  OpEndLoc = get_end_loc_with_comment(N),
 			  ArgsD1=make_args(Args, ArgsD,Ctxt1,OpEndLoc,'(',')'),
@@ -1024,7 +1112,7 @@ lay_2(Node, Ctxt) ->
            Type = wrangler_syntax:record_expr_type(Node),
            Fields = wrangler_syntax:record_expr_fields(Node),
            D1 = lay(Type, Ctxt1),
-           Sep = get_separator(Fields, Ctxt, ","),
+           {Sep,_} = get_separator(Fields, Ctxt, ","),
            Fs =seq(Fields, floating(text(Sep)), Ctxt1, fun lay/2),
            D2 = beside(floating(text("#")), D1),
            D3 = case Arg of
@@ -1155,8 +1243,9 @@ lay_list(Node, Ctxt) ->
     Ctxt1 = reset_check_bracket(reset_prec(Ctxt)),
     Node1 = wrangler_syntax:compact_list(Node),
     PrefixElems = wrangler_syntax:list_prefix(Node1),
-    Sep = get_separator(PrefixElems, Ctxt, ","),
-    D0 = seq(PrefixElems, floating(text(Sep)), Ctxt1, fun lay/2),
+    {Sep, SameLine} = get_separator(PrefixElems, Ctxt, ","),
+    %% D0 = seq(PrefixElems, floating(text(Sep)), Ctxt1, fun lay/2),
+    D0 = seq(PrefixElems,text(Sep), SameLine, Ctxt1, fun lay/2),
     D1 = lay_elems(fun wrangler_prettypr_0:par/1, D0, PrefixElems, Ctxt),
     {{StartLn, StartCol}, {EndLn, EndCol}} = get_start_end_loc(Node),
     {PrefixStart={PrefixStartLn, PrefixStartCol},
@@ -1184,7 +1273,6 @@ lay_list(Node, Ctxt) ->
                         Pad = PrefixStartCol-StartCol-1,
                         case Pad>0 of
                             true ->
-                                %% beside(text("["), beside(text(spaces(Pad)), D1));
                                 beside(text("["), D1);
                             false ->
                                 beside(text("["), D1)
@@ -1264,7 +1352,7 @@ lay_comp(Node, Ctxt, Fun1, Fun2, Tok1, Tok2) ->
     Temp = wrangler_syntax:Fun1(Node),
     D1 = lay(Temp,Ctxt1),
     Body = wrangler_syntax:Fun2(Node),
-    Sep = get_separator(Body,Ctxt,","),
+    {Sep,_} = get_separator(Body,Ctxt,","),
     Es = seq(Body,floating(text(Sep)),Ctxt1,fun lay/2),
     D2 = lay_elems(fun wrangler_prettypr_0:par/1,Es,Body,Ctxt),
     {TempStart,TempEnd} = get_start_end_loc(Temp),
@@ -1571,7 +1659,13 @@ append_guard_1(G, D, CsNode, Ctxt) ->
     {{StartLn, StartCol},{_EndLn, _EndCol}}=get_start_end_loc(Guard),
     {WhenLn, WhenCol}=get_prev_keyword_loc(Ctxt#ctxt.tokens, {StartLn, StartCol}, 'when'),
     Pats = wrangler_syntax:clause_patterns(CsNode),
-    {{_PStartLn, _PStartCol}, {PEndLn, _PEndCol}}=get_start_end_loc(Pats),
+    PEndLn =case Pats of 
+                [] -> WhenLn;  %% no location info is available here.
+                _ ->
+                    {{_PStartLn, _PStartCol}, {PEndLn1, _PEndCol}}
+                        =get_start_end_loc(Pats),
+                    PEndLn1
+            end,
     {_,CsStartCol} = get_start_loc_with_comment(CsNode),
     D1= case WhenLn-PEndLn==1 of 
 	    true ->
@@ -1683,24 +1777,46 @@ lay_error_info(T,Ctxt) -> lay_concrete(T,Ctxt).
 lay_concrete(T,Ctxt) ->
     lay(wrangler_syntax:abstract(T),Ctxt).
 
-seq_1([H|T],Separator,Ctxt,Fun) ->
+seq_1([H|T],Sep,Ctxt,Fun) ->
     case T of
         [] -> [maybe_parentheses_1(Fun(H,Ctxt), H, Ctxt)];
 	_->
-	    [maybe_append(Separator,maybe_parentheses_1(Fun(H,Ctxt),H, Ctxt))|
-             seq_1(T,Separator,Ctxt,Fun)]
+	    [maybe_append(Sep,maybe_parentheses_1(Fun(H,Ctxt), H, Ctxt))|
+             seq_1(T,Sep,Ctxt,Fun)]
     end;
 seq_1([],_,_,_) -> [empty()].
 
 
-seq([H|T],Separator,Ctxt,Fun) ->
+seq([H|T],Sep,Ctxt,Fun) ->
     case T of
         [] -> [Fun(H,Ctxt)];
-	_->
-	    [maybe_append(Separator,Fun(H,Ctxt))|
-             seq(T,Separator,Ctxt,Fun)]
+	_ ->
+	    [maybe_append(Sep,Fun(H,Ctxt))|
+       seq(T,Sep,Ctxt,Fun)]
     end;
 seq([],_,_,_) -> [empty()].
+
+
+seq([H|T],Sep,SameLine,Ctxt,Fun) ->
+    case T of
+        [] -> [Fun(H,Ctxt)];
+	_ when SameLine->
+	    [maybe_append(Sep,Fun(H,Ctxt))|
+       seq(T, Sep, SameLine, Ctxt, Fun)];
+        _ ->
+            [Fun(H,Ctxt)|
+             seq_2(T,Sep,SameLine,Ctxt,Fun)]
+    end;
+seq([],_,_,_,_) -> [empty()].
+
+seq_2([H|T],Sep,SameLine,Ctxt,Fun) ->
+    case T of
+        [] -> [nest(-1, beside(Sep, Fun(H,Ctxt)))];
+	_ -> [nest(-1, beside(Sep,Fun(H,Ctxt)))|
+        seq_2(T, Sep, SameLine, Ctxt, Fun)]
+    end;
+seq_2([],_,_,_,_) -> [empty()].
+
 
 maybe_append(none,D) -> D;
 maybe_append(Suffix,D) -> beside(D,Suffix).
@@ -2019,29 +2135,38 @@ get_right_bracket_loc_1([T|Toks1],UnBalanced,LeftBracket,RightBracket) ->
 
 		    
 get_separator(_NodeList, [], Default) ->
-    Default;
+    {Default, true};
 get_separator([],_, Default) ->
-    Default;
+    {Default, true};
 get_separator(NodeList, Ctxt, Default) when is_list(NodeList) -> 
     Toks = Ctxt#ctxt.tokens,
     NodeToks = get_node_toks(Toks,NodeList),
-    NodeListToks = lists:append([get_node_toks(Toks, Elem)||
-				    Elem<-NodeList]),
-    SepToks = NodeToks -- NodeListToks,
+    {NodeListToks, SameLineAssoc} = 
+        lists:unzip([get_node_toks_and_assoc(Toks, Elem)||
+                        Elem<-NodeList]),
+    SepToks = NodeToks -- lists:append(NodeListToks),
     case SepToks of 
-	[] ->
-	    Default;
+        [] ->
+            {Default, true};
 	_ ->
-	    {OnlyComma, CommaWithSpace} =get_comma_tokens(SepToks),     
-	    case length(OnlyComma) >length(CommaWithSpace) of 
-		true ->
-		    ",";
-		false ->
-		    ", "
-	    end
+            AppendAfterCount = length([true||true <- SameLineAssoc]),
+            AppendBeforeCount = length([false||false <- SameLineAssoc]),
+            SameLine = AppendAfterCount >= AppendBeforeCount,
+            case SameLine of 
+                false -> 
+                    {",", SameLine};
+                true ->
+                    {OnlyComma, CommaWithSpace} =get_comma_tokens(SepToks), 
+                    case length(OnlyComma) >length(CommaWithSpace) of 
+                        true ->
+                            {",", SameLine};
+                        false ->
+                            {", ", SameLine}
+                    end
+            end
     end;
 get_separator(_Node, _Ctxt, Default) ->
-    Default.
+    {Default, true}.
 
 get_node_toks(Toks, Node) ->
     {Start, End} = get_start_end_loc(Node),
@@ -2053,8 +2178,33 @@ get_node_toks(Toks, Node) ->
 			      token_loc(T)<Start
 		      end, Toks),
 	    lists:takewhile(fun(T)->
-				    token_loc(T)=<End
-			    end, Toks1)
+                                    token_loc(T)=<End
+                            end, Toks1)
+    end.
+     
+get_node_toks_and_assoc(Toks, Node) ->
+    {Start, End={Ln, _Col}} = get_start_end_loc(Node),
+    case Start =={0,0} orelse End=={0,0} of
+	true -> {[], unknown};
+	false ->
+	    Toks1 = lists:dropwhile(
+		      fun(T) ->
+			      token_loc(T)<Start
+		      end, Toks),
+	    {Toks2, Toks3}=lists:splitwith(
+                             fun(T)->
+                                     token_loc(T)=<End
+                             end, Toks1),
+            Toks4 = lists:dropwhile(
+                      fun(T) -> 
+                              is_whitespace_or_comment(T)
+                      end, Toks3),
+            SepAtSameLine= case Toks4 of
+                               [{',', {Ln1, _}}|_] ->
+                                    Ln1 == Ln;
+                               _ -> unknown
+                           end,
+            {Toks2, SepAtSameLine}
     end.
 
 get_comma_tokens(Toks) ->   
@@ -2611,7 +2761,6 @@ lay_type_args_1(Ts, Ctxt) ->
 
 
 lay_type_0(T, Ctxt) -> 
-   %% wrangler_io:format("T:\n~p\n", [T]),
     lay_type(T, Ctxt).
 
 lay_type({ann_type,_Line,[V,T]}, Ctxt) ->
