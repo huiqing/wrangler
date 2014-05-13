@@ -56,7 +56,9 @@
         fun()->
                 api_refac:check_collect_template(Before, 'RULE'),
                 {rule, fun(_W_File_, _W_Node_) ->
-                               _W_NewCond=fun(_W_Bind_) -> 
+                               _W_NewCond=fun(_W_Bind_) ->
+                                                  _This@=_W_Node_,
+                                                  _File@=_W_File_,
                                                   api_refac:make_cond(Cond, _W_Bind_)
                                           end,
                                case api_refac:match(Before, _W_Node_, _W_NewCond) of
@@ -65,7 +67,11 @@
                                        _File@=_W_File_,
                                        api_refac:generate_bindings(Before, '_W_Bind1_'),
                                        _W_After = api_refac:subst(fun()->After end(), _W_Bind1_),
-                                       {wrangler_misc:reset_pos_and_range(_W_After), true};
+                                       {_W_After
+                                       %%{api_refac:reset_pos_and_range(_W_After)
+                                        %%  wrangler_misc:rewrite(_This@, _W_After)) 
+                                        %% layout doesn't always work!                                       
+                                       , true};
                                    false ->{_W_Node_, false}
                                end 
                        end, Before} 
@@ -77,6 +83,8 @@
                 api_refac:check_collect_template(Before, 'RULE'),
                 {rule, fun(_W_File_, _W_Node_) ->
                                _W_NewCond=fun(_W_Bind_) -> 
+                                                  _This@=_W_Node_,
+                                                  _File@=_W_File_,
                                                   api_refac:make_cond(Cond, _W_Bind_)
                                           end,
                                case api_refac:match(Before, _W_Node_, _W_NewCond) of
@@ -135,6 +143,8 @@
 -define(T(Template), api_refac:template(Template)).
  
 -define(TO_AST(Str), api_refac:quote(Str)).
+
+-define(TO_AST(Str, StartLoc), api_refac:quote(Str,StartLoc )).
 
 -define(PP(Node), api_refac:pp(Node)).
 
@@ -253,7 +263,7 @@
         wrangler_cmd_server:update_entity({M,F,A})).
 
 
--type(elementary_refac()::{refac_, atom, [term()]}).
+-type(elementary_refac()::{refac_, atom(), term()}).
 
 -type (qualifier():: atomic | non_atomic).
 
@@ -262,4 +272,6 @@
                          {repeat_interactive, qualifier(), [elementary_refac()]} | 
                          {if_then, function(), composite_refac()} |
                          {while, function(), qualifier(), composite_refac()} |
-                         {qualifier, [composite_refac()]}).
+                         {qualifier(), composite_refac()|[composite_refac()]}).
+                          
+                        
